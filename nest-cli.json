@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "apps/Creator-api/src",
+  "compilerOptions": {
+    "deleteOutDir": true,
+    "webpack": true,
+    "tsConfigPath": "apps/Creator-api/tsconfig.app.json"
+  },
+  "monorepo": true,
+  "root": "apps/Creator-api",
+  "projects": {
+    "Creator-api": {
+      "type": "application",
+      "root": "apps/Creator-api",
+      "entryFile": "main",
+      "sourceRoot": "apps/Creator-api/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/Creator-api/tsconfig.app.json"
+      }
+    },
+    "Creator-batch": {
+      "type": "application",
+      "root": "apps/Creator-batch",
+      "entryFile": "main",
+      "sourceRoot": "apps/Creator-batch/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/Creator-batch/tsconfig.app.json"
+      }
+    }
+  }
+}
