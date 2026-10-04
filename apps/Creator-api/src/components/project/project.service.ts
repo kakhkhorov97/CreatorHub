@@ -4,12 +4,21 @@ import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import { PageInput } from '../../libs/dto/common/pagination.input';
 import { PortfolioProject } from '../../libs/dto/project/portfolio-project';
-import { CreateProjectInput, UpdateProjectInput } from '../../libs/dto/project/project.input';
+import { CreateProjectInput } from '../../libs/dto/project/project.input';
+import { UpdateProjectInput } from '../../libs/dto/project/project.update';
 import { User } from '../../libs/dto/user/user';
-import { ActivityEventType, ProjectStatus } from '../../libs/enums/creatorhub.enum';
-import { MediaPolicy } from '../../libs/utils/media-policy.service';
-import { check, defined, objectId, page, requireRecord, requireActive } from '../../libs/utils/policy';
-import { saveRevision } from '../../libs/utils/save-revision';
+import { ActivityEventType } from '../../libs/enums/activity-event-type.enum';
+import { ProjectStatus } from '../../libs/enums/project-status.enum';
+import { MediaPolicy } from '../../libs/helpers/media-policy.service';
+import {
+	check,
+	defined,
+	shapeIntoMongooseObjectId,
+	page,
+	requireRecord,
+	requireCreator,
+} from '../../libs/helpers/policy';
+import { saveRevision } from '../../libs/helpers/save-revision';
 import { CategoriesService } from '../category/category.service';
 import { CreatorsService } from '../creator/creator.service';
 import { VisibilityService } from '../creator/visibility.service';
@@ -29,7 +38,7 @@ export class ProjectService {
 	public async getProject(id: string) {
 		const project = requireRecord(
 			await this.projectModel.findOne({
-				_id: objectId(id),
+				_id: shapeIntoMongooseObjectId(id),
 				status: ProjectStatus.PUBLISHED,
 				deletedAt: { $exists: false },
 			}),
@@ -39,20 +48,26 @@ export class ProjectService {
 	}
 
 	public async getMyProjects(currentUser: User, input: PageInput) {
+		requireCreator(currentUser);
 		const creator = await this.creators.own(currentUser);
 		const { offset, limit } = page(input);
-		return this.projectModel
-			.find({ creatorId: creator._id, deletedAt: { $exists: false } })
-			.sort({ createdAt: -1, _id: -1 })
-			.skip(offset)
-			.limit(limit);
+		const query = this.projectModel.find({ creatorId: creator._id, deletedAt: { $exists: false } });
+		const [list, total] = await Promise.all([
+			query.clone().sort({ createdAt: -1, _id: -1 }).skip(offset).limit(limit),
+			query.countDocuments(),
+		]);
+		return { list, metaCounter: total ? [{ total }] : [] };
 	}
 
 	private async owned(currentUser: User, id: string) {
-		requireActive(currentUser);
+		requireCreator(currentUser);
 		const creator = await this.creators.own(currentUser);
 		return requireRecord(
-			await this.projectModel.findOne({ _id: objectId(id), creatorId: creator._id, deletedAt: { $exists: false } }),
+			await this.projectModel.findOne({
+				_id: shapeIntoMongooseObjectId(id),
+				creatorId: creator._id,
+				deletedAt: { $exists: false },
+			}),
 		);
 	}
 
@@ -70,7 +85,7 @@ export class ProjectService {
 	}
 
 	public async createProject(currentUser: User, input: CreateProjectInput) {
-		requireActive(currentUser);
+		requireCreator(currentUser);
 		const creator = await this.creators.own(currentUser);
 		const project = new this.projectModel({ ...defined(input), creatorId: creator._id });
 		await this.validate(project, currentUser);

@@ -1,7 +1,9 @@
-import { InquiryOutcome, InquiryStatus } from '../../libs/enums/creatorhub.enum';
-import { check } from '../../libs/utils/policy';
+import { InquiryOutcome } from '../../libs/enums/inquiry-outcome.enum';
+import { InquiryStatus } from '../../libs/enums/inquiry-status.enum';
+import { check } from '../../libs/helpers/policy';
 
 export type InquiryAction = 'SUBMIT' | 'MESSAGE' | 'DECLINE' | 'CANCEL' | 'CLOSE';
+
 export function nextInquiryStatus(
 	status: InquiryStatus,
 	action: InquiryAction,

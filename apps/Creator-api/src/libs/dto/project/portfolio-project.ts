@@ -1,6 +1,7 @@
+import { MetaCounter } from '../common/meta-counter';
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
-import { ProjectStatus } from '../../enums/creatorhub.enum';
+import { ProjectStatus } from '../../enums/project-status.enum';
 import { MutableEntity } from '../common/entity';
 import { PortfolioMedia } from '../common/portfolio-media';
 
@@ -44,4 +45,13 @@ export class PortfolioProject extends MutableEntity {
 
 	@Field(() => Date, { nullable: true })
 	deletedAt?: Date;
+}
+
+@ObjectType()
+export class Projects {
+	@Field(() => [PortfolioProject])
+	list!: PortfolioProject[];
+
+	@Field(() => [MetaCounter])
+	metaCounter!: MetaCounter[];
 }

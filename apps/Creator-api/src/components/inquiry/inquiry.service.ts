@@ -11,22 +11,25 @@ import {
 	CreateInquiryInput,
 	InquiryVersionInput,
 	SendMessageInput,
-	UpdateInquiryInput,
 } from '../../libs/dto/inquiry/inquiry.input';
+import { UpdateInquiryInput } from '../../libs/dto/inquiry/inquiry.update';
 import { Notification } from '../../libs/dto/notification/notification';
 import { User } from '../../libs/dto/user/user';
-import { CreatorAvailability, InquiryEventType, InquiryStatus, UserStatus } from '../../libs/enums/creatorhub.enum';
+import { CreatorAvailability } from '../../libs/enums/creator-availability.enum';
+import { InquiryEventType } from '../../libs/enums/inquiry-event-type.enum';
+import { InquiryStatus } from '../../libs/enums/inquiry-status.enum';
+import { UserStatus } from '../../libs/enums/user-status.enum';
 import {
 	check,
 	defined,
 	duplicateKey,
-	objectId,
+	shapeIntoMongooseObjectId,
 	page,
 	requireRecord,
 	requireActive,
 	sameId,
 	versionConflict,
-} from '../../libs/utils/policy';
+} from '../../libs/helpers/policy';
 import { VisibilityService } from '../creator/visibility.service';
 import { ServiceService } from '../service/service.service';
 import { nextInquiryStatus } from './inquiry.policy';
@@ -50,7 +53,7 @@ export class InquiryService {
 			await this.userModel.findOne({ _id: currentUser._id, status: UserStatus.ACTIVE }).session(session),
 		);
 		requireActive(current);
-		const inquiry = requireRecord(await this.inquiryModel.findById(objectId(id)).session(session));
+		const inquiry = requireRecord(await this.inquiryModel.findById(shapeIntoMongooseObjectId(id)).session(session));
 		const creator = requireRecord(await this.profileModel.findById(inquiry.creatorId).session(session));
 		const isClient = sameId(inquiry.clientId, currentUser._id);
 		if (!isClient && (!sameId(creator.userId, currentUser._id) || inquiry.status === InquiryStatus.DRAFT))
@@ -67,7 +70,7 @@ export class InquiryService {
 
 	public async createInquiry(currentUser: User, input: CreateInquiryInput) {
 		requireActive(currentUser);
-		const creator = await this.visibility.profile(objectId(input.creatorId));
+		const creator = await this.visibility.profile(shapeIntoMongooseObjectId(input.creatorId));
 		check(!sameId(creator.userId, currentUser._id), 'You cannot inquire about your own work');
 		this.validateBudget(input);
 		// Service ownership and availability are rechecked at submission, even for saved drafts.
@@ -111,36 +114,42 @@ export class InquiryService {
 	public async getInquiries(currentUser: User, creatorInbox: boolean, input: PageInput) {
 		requireActive(currentUser);
 		const { offset, limit } = page(input);
-		if (!creatorInbox)
-			return this.inquiryModel
-				.find({ clientId: currentUser._id })
-				.sort({ updatedAt: -1, _id: -1 })
-				.skip(offset)
-				.limit(limit);
-		// Soft-deleted profiles retain their existing private conversations.
-		const creator = await this.profileModel.findOne({ userId: currentUser._id });
-		if (!creator) return [];
-		return this.inquiryModel
-			.find({ creatorId: creator._id, status: { $ne: InquiryStatus.DRAFT } })
-			.sort({ updatedAt: -1, _id: -1 })
-			.skip(offset)
-			.limit(limit);
+		const creator = creatorInbox ? await this.profileModel.findOne({ userId: currentUser._id }) : null;
+		if (creatorInbox && !creator) return { list: [], metaCounter: [] };
+		const query = this.inquiryModel.find(
+			creatorInbox ? { creatorId: creator!._id, status: { $ne: InquiryStatus.DRAFT } } : { clientId: currentUser._id },
+		);
+		const [list, total] = await Promise.all([
+			query.clone().sort({ updatedAt: -1, _id: -1 }).skip(offset).limit(limit),
+			query.countDocuments(),
+		]);
+		return { list, metaCounter: total ? [{ total }] : [] };
 	}
 
 	public async getMessages(currentUser: User, id: string, input: PageInput) {
 		const { inquiry } = await this.participant(currentUser, id);
 		const { offset, limit } = page(input);
-		return this.messageModel.find({ inquiryId: inquiry._id }).sort({ createdAt: 1, _id: 1 }).skip(offset).limit(limit);
+		const query = this.messageModel.find({ inquiryId: inquiry._id });
+		const [list, total] = await Promise.all([
+			query.clone().sort({ createdAt: 1, _id: 1 }).skip(offset).limit(limit),
+			query.countDocuments(),
+		]);
+		return { list, metaCounter: total ? [{ total }] : [] };
 	}
 
 	public async getEvents(currentUser: User, id: string, input: PageInput) {
 		const { inquiry } = await this.participant(currentUser, id);
 		const { offset, limit } = page(input);
-		return this.eventModel.find({ inquiryId: inquiry._id }).sort({ version: 1 }).skip(offset).limit(limit);
+		const query = this.eventModel.find({ inquiryId: inquiry._id });
+		const [list, total] = await Promise.all([
+			query.clone().sort({ version: 1 }).skip(offset).limit(limit),
+			query.countDocuments(),
+		]);
+		return { list, metaCounter: total ? [{ total }] : [] };
 	}
 
 	public async markMessageRead(currentUser: User, id: string) {
-		const message = requireRecord(await this.messageModel.findById(objectId(id)));
+		const message = requireRecord(await this.messageModel.findById(shapeIntoMongooseObjectId(id)));
 		await this.participant(currentUser, String(message.inquiryId));
 		check(!sameId(message.senderId, currentUser._id), 'You cannot mark your own message as read');
 		await this.messageModel.updateOne(

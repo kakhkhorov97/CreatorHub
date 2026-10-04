@@ -1,8 +1,8 @@
 import { ActivityModule } from '../activity/activity.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import InquiryEventSchema from '../../schemas/inquiry/InquiryEvent.model';
-import NotificationSchema from '../../schemas/notification/Notification.model';
+import InquiryEventSchema from '../../schemas/InquiryEvent.model';
+import NotificationSchema from '../../schemas/Notification.model';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationResolver } from './notification.resolver';
 import { NotificationService } from './notification.service';

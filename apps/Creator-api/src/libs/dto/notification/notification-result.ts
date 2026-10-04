@@ -1,3 +1,4 @@
+import { MetaCounter } from '../common/meta-counter';
 import { Field, ObjectType } from '@nestjs/graphql';
 import { InquiryEvent } from '../inquiry/inquiry-event';
 import { ActivityEvent } from './activity-event';
@@ -13,4 +14,13 @@ export class NotificationResult extends Notification {
 
 	@Field(() => Boolean)
 	unavailable: boolean;
+}
+
+@ObjectType()
+export class Notifications {
+	@Field(() => [NotificationResult])
+	list!: NotificationResult[];
+
+	@Field(() => [MetaCounter])
+	metaCounter!: MetaCounter[];
 }

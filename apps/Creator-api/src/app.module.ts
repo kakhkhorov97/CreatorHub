@@ -9,9 +9,9 @@ import { AppService } from './app.service';
 import { ComponentsModule } from './components/components.module';
 import { DatabaseModule } from './database/database.module';
 import { validateEnvironment } from './libs/config';
-import { GraphqlErrorFilter } from './libs/utils/graphql-error.filter';
-import { RateLimitGuard } from './libs/utils/rate-limit.guard';
-import { graphqlRequestLogger } from './libs/utils/request-logger';
+import { GraphqlErrorFilter } from './libs/filters/graphql-error.filter';
+import { RateLimitGuard } from './components/auth/guards/rate-limit.guard';
+import { graphqlRequestLogger } from './libs/interceptors/request-logger';
 
 @Module({
 	imports: [

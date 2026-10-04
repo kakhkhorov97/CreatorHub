@@ -15,9 +15,12 @@ import {
 } from '../../libs/dto/auth/auth.input';
 import { AuthIdentity } from '../../libs/dto/auth/auth-identity';
 import { User } from '../../libs/dto/user/user';
-import { AuthProvider, AuthTokenPurpose } from '../../libs/enums/creatorhub.enum';
+import { AuthProvider } from '../../libs/enums/auth-provider.enum';
+import { AuthTokenPurpose } from '../../libs/enums/auth-token-purpose.enum';
 import { AuthService } from './auth.service';
-import { CurrentUser, AuthGuard, SessionId } from './guards/auth.guard';
+import { AuthGuard } from './guards/auth.guard';
+import { AuthMember } from './decorators/authMember.decorator';
+import { SessionId } from './decorators/sessionId.decorator';
 
 @Resolver()
 export class AuthResolver {
@@ -80,26 +83,26 @@ export class AuthResolver {
 
 	@UseGuards(AuthGuard)
 	@Query(() => [AuthIdentity])
-	getMyAuthIdentities(@CurrentUser() user: User) {
+	getMyAuthIdentities(@AuthMember() user: User) {
 		return this.auth.getMyIdentities(user);
 	}
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => AuthIdentity)
-	linkEmail(@CurrentUser() user: User, @SessionId() sessionId: string, @Args('input') input: LinkEmailInput) {
+	linkEmail(@AuthMember() user: User, @SessionId() sessionId: string, @Args('input') input: LinkEmailInput) {
 		return this.auth.linkEmail(user, sessionId, input);
 	}
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => AuthIdentity)
-	linkPhone(@CurrentUser() user: User, @SessionId() sessionId: string, @Args('input') input: LinkPhoneInput) {
+	linkPhone(@AuthMember() user: User, @SessionId() sessionId: string, @Args('input') input: LinkPhoneInput) {
 		return this.auth.linkPhone(user, sessionId, input);
 	}
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => String)
 	beginSocialLink(
-		@CurrentUser() user: User,
+		@AuthMember() user: User,
 		@SessionId() sessionId: string,
 		@Args('provider', { type: () => AuthProvider }) provider: AuthProvider,
 	) {
@@ -108,14 +111,14 @@ export class AuthResolver {
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => AuthIdentity)
-	linkSocial(@CurrentUser() user: User, @SessionId() sessionId: string, @Args('input') input: SocialLoginInput) {
+	linkSocial(@AuthMember() user: User, @SessionId() sessionId: string, @Args('input') input: SocialLoginInput) {
 		return this.auth.linkSocial(user, sessionId, input);
 	}
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => Boolean)
 	unlinkAuthIdentity(
-		@CurrentUser() user: User,
+		@AuthMember() user: User,
 		@SessionId() sessionId: string,
 		@Args('authIdentityId', { type: () => ID }) id: string,
 	) {
@@ -125,7 +128,7 @@ export class AuthResolver {
 	@UseGuards(AuthGuard)
 	@Mutation(() => Boolean)
 	changePhonePassword(
-		@CurrentUser() user: User,
+		@AuthMember() user: User,
 		@SessionId() sessionId: string,
 		@Args('input') input: ChangePhonePasswordInput,
 	) {
@@ -134,7 +137,7 @@ export class AuthResolver {
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => Boolean)
-	logout(@CurrentUser() user: User, @SessionId() sessionId: string) {
+	logout(@AuthMember() user: User, @SessionId() sessionId: string) {
 		return this.auth.logout(user, sessionId);
 	}
 }

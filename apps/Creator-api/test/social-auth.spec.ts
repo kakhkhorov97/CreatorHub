@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { SocialAuthService } from '../src/components/auth/social-auth.service';
-import { AuthProvider } from '../src/libs/enums/creatorhub.enum';
+import { AuthProvider } from '../src/libs/enums/auth-provider.enum';
 
 // Signed local fixtures verify token security without contacting provider accounts.
 describe('Social provider token verification', () => {

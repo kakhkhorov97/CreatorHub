@@ -12,8 +12,9 @@ import {
 	MaxLength,
 	ValidateIf,
 } from 'class-validator';
-import { normalizePhone } from '../../utils/phone';
-import { AuthProvider, Locale } from '../../enums/creatorhub.enum';
+import { normalizePhone } from '../../helpers/phone';
+import { AuthProvider } from '../../enums/auth-provider.enum';
+import { Locale } from '../../enums/locale.enum';
 
 @InputType()
 export class RegisterInput {

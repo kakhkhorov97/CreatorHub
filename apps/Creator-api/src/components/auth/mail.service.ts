@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { AuthTokenPurpose } from '../../libs/enums/creatorhub.enum';
+import { AuthTokenPurpose } from '../../libs/enums/auth-token-purpose.enum';
 
 @Injectable()
 export class MailService {

@@ -3,7 +3,7 @@ import { expressMiddleware } from '@apollo/server/express4';
 import { Logger } from '@nestjs/common';
 import express, { Express, Request } from 'express';
 import request from 'supertest';
-import { graphqlRequestLogger, requestLogger } from '../src/libs/utils/request-logger';
+import { graphqlRequestLogger, requestLogger } from '../src/libs/interceptors/request-logger';
 
 describe('Request logging', () => {
 	let app: Express;

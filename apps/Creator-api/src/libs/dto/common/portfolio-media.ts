@@ -1,5 +1,5 @@
 import { Field, Int, ObjectType } from '@nestjs/graphql';
-import { MediaType } from '../../enums/creatorhub.enum';
+import { MediaType } from '../../enums/media-type.enum';
 
 @ObjectType()
 export class PortfolioMedia {

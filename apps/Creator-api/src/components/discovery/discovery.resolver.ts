@@ -1,10 +1,12 @@
+import { Services } from '../../libs/dto/service/creator-service';
+import { Projects } from '../../libs/dto/project/portfolio-project';
+import { Creators } from '../../libs/dto/creator/creator-profile';
 import { Args, Query, Resolver } from '@nestjs/graphql';
 import { DiscoveryResult } from '../../libs/dto/discovery/discovery-result';
 import { CITIES, City } from '../../libs/dto/common/locations';
-import { CreatorProfile } from '../../libs/dto/creator/creator-profile';
+
 import { AssistantInput, DiscoveryInput } from '../../libs/dto/discovery/discovery.input';
-import { PortfolioProject } from '../../libs/dto/project/portfolio-project';
-import { CreatorService } from '../../libs/dto/service/creator-service';
+
 import { AssistantService } from './assistant.service';
 import { DiscoveryService } from './discovery.service';
 
@@ -20,17 +22,17 @@ export class DiscoveryResolver {
 		return CITIES;
 	}
 
-	@Query(() => [CreatorProfile])
+	@Query(() => Creators)
 	public getCreators(@Args('input', { defaultValue: {} }) input: DiscoveryInput) {
 		return this.discovery.getCreators(input);
 	}
 
-	@Query(() => [PortfolioProject])
+	@Query(() => Projects)
 	public getProjects(@Args('input', { defaultValue: {} }) input: DiscoveryInput) {
 		return this.discovery.getProjects(input);
 	}
 
-	@Query(() => [CreatorService])
+	@Query(() => Services)
 	public getServices(@Args('input', { defaultValue: {} }) input: DiscoveryInput) {
 		return this.discovery.getServices(input);
 	}

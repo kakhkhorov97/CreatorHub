@@ -1,4 +1,4 @@
-import { Field, ID, InputType, PartialType } from '@nestjs/graphql';
+import { Field, ID, InputType } from '@nestjs/graphql';
 import { Transform, Type } from 'class-transformer';
 import {
 	ArrayMaxSize,
@@ -15,7 +15,7 @@ import {
 	ValidateIf,
 	ValidateNested,
 } from 'class-validator';
-import { CreatorAvailability } from '../../enums/creatorhub.enum';
+import { CreatorAvailability } from '../../enums/creator-availability.enum';
 
 @InputType()
 export class SocialLinkInput {
@@ -101,6 +101,3 @@ export class CreateCreatorInput {
 	@Type(() => SocialLinkInput)
 	socialLinks?: SocialLinkInput[];
 }
-
-@InputType()
-export class UpdateCreatorInput extends PartialType(CreateCreatorInput, { skipNullProperties: false }) {}

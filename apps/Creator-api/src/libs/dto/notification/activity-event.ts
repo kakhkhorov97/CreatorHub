@@ -1,7 +1,8 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
 import { MutableEntity } from '../common/entity';
-import { ActivityEventType, ActivityDeliveryStatus } from '../../enums/creatorhub.enum';
+import { ActivityDeliveryStatus } from '../../enums/activity-delivery-status.enum';
+import { ActivityEventType } from '../../enums/activity-event-type.enum';
 
 @ObjectType()
 export class ActivityEvent extends MutableEntity {

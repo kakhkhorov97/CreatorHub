@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import CreatorProfileSchema from '../../schemas/creator/CreatorProfile.model';
-import InquirySchema from '../../schemas/inquiry/Inquiry.model';
-import InquiryEventSchema from '../../schemas/inquiry/InquiryEvent.model';
-import InquiryMessageSchema from '../../schemas/inquiry/InquiryMessage.model';
-import NotificationSchema from '../../schemas/notification/Notification.model';
-import UserSchema from '../../schemas/user/User.model';
+import CreatorProfileSchema from '../../schemas/CreatorProfile.model';
+import InquirySchema from '../../schemas/Inquiry.model';
+import InquiryEventSchema from '../../schemas/InquiryEvent.model';
+import InquiryMessageSchema from '../../schemas/InquiryMessage.model';
+import NotificationSchema from '../../schemas/Notification.model';
+import UserSchema from '../../schemas/User.model';
 import { AuthModule } from '../auth/auth.module';
 import { CreatorModule } from '../creator/creator.module';
 import { ServiceModule } from '../service/service.module';

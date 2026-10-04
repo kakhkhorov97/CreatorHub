@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import CreatorProfileSchema from '../../schemas/creator/CreatorProfile.model';
-import UserSchema from '../../schemas/user/User.model';
+import CreatorProfileSchema from '../../schemas/CreatorProfile.model';
+import UserSchema from '../../schemas/User.model';
 import { AuthModule } from '../auth/auth.module';
 import { CategoryModule } from '../category/category.module';
 import { CreatorsResolver } from './creator.resolver';

@@ -1,9 +1,33 @@
+import { ProjectSort } from '../../enums/project-sort.enum';
 import { Field, ID, InputType, Int } from '@nestjs/graphql';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsInt, IsMongoId, IsString, Length, Max, Min, ValidateIf } from 'class-validator';
+import {
+	ArrayMaxSize,
+	IsArray,
+	IsEnum,
+	IsBoolean,
+	IsInt,
+	IsMongoId,
+	IsString,
+	Length,
+	Max,
+	Min,
+	ValidateIf,
+} from 'class-validator';
 
 @InputType()
 export class DiscoveryInput {
+	@Field(() => ProjectSort, { nullable: true })
+	@ValidateIf((_object, value) => value !== undefined)
+	@IsEnum(ProjectSort)
+	sort?: ProjectSort;
+	@Field(() => [ID], { nullable: true })
+	@ValidateIf((_object, value) => value !== undefined)
+	@IsArray()
+	@ArrayMaxSize(50)
+	@IsMongoId({ each: true })
+	excludeProjectIds?: string[];
+
 	@Field(() => ID, { nullable: true })
 	@ValidateIf((_object, value) => value !== undefined)
 	@IsMongoId()
@@ -43,9 +67,9 @@ export class DiscoveryInput {
 	@Field(() => Int, { nullable: true })
 	@ValidateIf((_object, value) => value !== undefined)
 	@IsInt()
-	@Min(0)
+	@Min(1)
 	@Max(10000)
-	offset?: number;
+	page?: number;
 
 	@Field(() => Int, { nullable: true })
 	@ValidateIf((_object, value) => value !== undefined)

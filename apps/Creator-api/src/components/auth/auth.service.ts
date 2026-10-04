@@ -1,4 +1,7 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+import { scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
@@ -16,11 +19,19 @@ import {
 	LinkPhoneInput,
 } from '../../libs/dto/auth/auth.input';
 import { User } from '../../libs/dto/user/user';
-import { AuthProvider, AuthTokenPurpose, UserStatus } from '../../libs/enums/creatorhub.enum';
-import { duplicateKey, objectId } from '../../libs/utils/policy';
+import { AuthProvider } from '../../libs/enums/auth-provider.enum';
+import { AuthTokenPurpose } from '../../libs/enums/auth-token-purpose.enum';
+import { UserStatus } from '../../libs/enums/user-status.enum';
+import { duplicateKey, shapeIntoMongooseObjectId } from '../../libs/helpers/policy';
 import { MailService } from './mail.service';
 import { SocialAuthService } from './social-auth.service';
-import { hashPassword, newToken, tokenHash, verifyPassword } from './password';
+import { newToken, tokenHash } from './password';
+
+const scrypt = promisify(scryptCallback);
+
+const BCRYPT_ROUNDS = 12;
+
+const DUMMY_PASSWORD_HASH = '$2b$12$UFNLtHm2rDGn/8075k1JMOed2dDj61nJnQgnDVHKQ2FuYv5GDuWSi';
 
 @Injectable()
 export class AuthService {
@@ -35,12 +46,33 @@ export class AuthService {
 		private readonly social: SocialAuthService,
 	) {}
 
+	public async hashPassword(password: string): Promise<string> {
+		if (Buffer.byteLength(password, 'utf8') > 72) {
+			throw new BadRequestException('Password must be at most 72 UTF-8 bytes');
+		}
+
+		return bcrypt.hash(password, BCRYPT_ROUNDS);
+	}
+
+	public async comparePasswords(password: string, stored: string): Promise<boolean> {
+		if (/^\$2[ab]\$/.test(stored)) {
+			if (Buffer.byteLength(password, 'utf8') > 72) return false;
+			return bcrypt.compare(password, stored);
+		}
+
+		// Keep existing scrypt accounts usable until their password is changed or reset.
+		if (!/^scrypt:[a-f0-9]{32}:[a-f0-9]{128}$/.test(stored)) return false;
+		const [, salt, encoded] = stored.split(':');
+		const key = (await scrypt(password, salt, 64)) as Buffer;
+		return timingSafeEqual(Buffer.from(encoded, 'hex'), key);
+	}
+
 	public async register(input: RegisterInput) {
 		const { user, identity } = await this.createAccount(
 			input,
 			AuthProvider.EMAIL,
 			input.email,
-			await hashPassword(input.password),
+			await this.hashPassword(input.password),
 		);
 		await this.issueToken(identity, AuthTokenPurpose.EMAIL_VERIFY);
 		return this.createSession(user, identity);
@@ -51,7 +83,7 @@ export class AuthService {
 			input,
 			AuthProvider.PHONE,
 			input.phoneNumber,
-			await hashPassword(input.password),
+			await this.hashPassword(input.password),
 		);
 		return this.createSession(user, identity);
 	}
@@ -93,6 +125,7 @@ export class AuthService {
 	public login(input: LoginInput) {
 		return this.loginPassword(AuthProvider.EMAIL, input.email, input.password);
 	}
+
 	public loginPhone(input: PhoneLoginInput) {
 		return this.loginPassword(AuthProvider.PHONE, input.phoneNumber, input.password);
 	}
@@ -101,10 +134,7 @@ export class AuthService {
 		const identity = await this.identities
 			.findOne({ provider, providerSubject, revokedAt: { $exists: false } })
 			.select('+passwordHash');
-		const valid = await verifyPassword(
-			password,
-			identity?.passwordHash ?? 'scrypt:00000000000000000000000000000000:' + '0'.repeat(128),
-		);
+		const valid = await this.comparePasswords(password, identity?.passwordHash ?? DUMMY_PASSWORD_HASH);
 		if (!identity || !valid) throw new UnauthorizedException('Invalid login or password');
 		await this.requireUsable(identity);
 		const user = await this.activeUser(identity.userId);
@@ -201,8 +231,8 @@ export class AuthService {
 		try {
 			const payload = await this.jwt.verifyAsync<{ sub: string; sid: string }>(accessToken);
 			const session = await this.sessions.findOne({
-				_id: objectId(payload.sid),
-				userId: objectId(payload.sub),
+				_id: shapeIntoMongooseObjectId(payload.sid),
+				userId: shapeIntoMongooseObjectId(payload.sub),
 				revokedAt: { $exists: false },
 				expiresAt: { $gt: new Date() },
 			});
@@ -216,7 +246,7 @@ export class AuthService {
 
 	public async logout(user: User, sessionId: string): Promise<boolean> {
 		await this.sessions.updateOne(
-			{ _id: objectId(sessionId), userId: user._id, revokedAt: { $exists: false } },
+			{ _id: shapeIntoMongooseObjectId(sessionId), userId: user._id, revokedAt: { $exists: false } },
 			{ $set: { revokedAt: new Date() } },
 		);
 		return true;
@@ -304,7 +334,7 @@ export class AuthService {
 	}
 
 	public async resetPassword(input: ResetPasswordInput): Promise<boolean> {
-		const passwordHash = await hashPassword(input.password);
+		const passwordHash = await this.hashPassword(input.password);
 		await this.connection.transaction(async (session) => {
 			const identity = await this.consume(input.token, AuthTokenPurpose.PASSWORD_RESET, session);
 			await this.identities.updateOne({ _id: identity._id }, { $set: { passwordHash } }, { session });
@@ -319,7 +349,7 @@ export class AuthService {
 
 	private async recentSession(user: User, sessionId: string) {
 		const recent = await this.sessions.exists({
-			_id: objectId(sessionId),
+			_id: shapeIntoMongooseObjectId(sessionId),
 			userId: user._id,
 			revokedAt: { $exists: false },
 			expiresAt: { $gt: new Date() },
@@ -339,14 +369,19 @@ export class AuthService {
 
 	public async linkEmail(user: User, sessionId: string, input: LinkEmailInput) {
 		await this.recentSession(user, sessionId);
-		const identity = await this.linkIdentity(user, AuthProvider.EMAIL, input.email, await hashPassword(input.password));
+		const identity = await this.linkIdentity(
+			user,
+			AuthProvider.EMAIL,
+			input.email,
+			await this.hashPassword(input.password),
+		);
 		if (!identity.verifiedAt) await this.issueToken(identity, AuthTokenPurpose.EMAIL_VERIFY);
 		return identity;
 	}
 
 	public async linkPhone(user: User, sessionId: string, input: LinkPhoneInput) {
 		await this.recentSession(user, sessionId);
-		return this.linkIdentity(user, AuthProvider.PHONE, input.phoneNumber, await hashPassword(input.password));
+		return this.linkIdentity(user, AuthProvider.PHONE, input.phoneNumber, await this.hashPassword(input.password));
 	}
 
 	public async beginSocialLink(user: User, sessionId: string, provider: AuthProvider) {
@@ -401,7 +436,9 @@ export class AuthService {
 		await this.recentSession(user, sessionId);
 		await this.connection.transaction(async (session) => {
 			await this.lockAccount(user, session);
-			const identity = await this.identities.findOne({ _id: objectId(id), userId: user._id }).session(session);
+			const identity = await this.identities
+				.findOne({ _id: shapeIntoMongooseObjectId(id), userId: user._id })
+				.session(session);
 			if (!identity) throw new UnauthorizedException('Login method unavailable');
 			if (identity.revokedAt) return;
 			const remaining = await this.identities
@@ -430,14 +467,14 @@ export class AuthService {
 
 	public async changePhonePassword(user: User, sessionId: string, password: string) {
 		await this.recentSession(user, sessionId);
-		const passwordHash = await hashPassword(password);
+		const passwordHash = await this.hashPassword(password);
 		await this.connection.transaction(async (session) => {
 			await this.lockAccount(user, session);
 			const identity = await this.identities
 				.findOne({ userId: user._id, provider: AuthProvider.PHONE, revokedAt: { $exists: false } })
 				.session(session);
 			if (!identity) throw new UnauthorizedException('Phone login unavailable');
-			const current = await this.sessions.findById(objectId(sessionId)).session(session);
+			const current = await this.sessions.findById(shapeIntoMongooseObjectId(sessionId)).session(session);
 			if (!current || String(current.authIdentityId) === String(identity._id))
 				throw new UnauthorizedException('Sign in with another linked method to replace a phone password');
 			await this.identities.updateOne({ _id: identity._id }, { $set: { passwordHash } }, { session });

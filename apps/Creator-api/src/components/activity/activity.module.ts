@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import ProjectLikeSchema from '../../schemas/engagement/ProjectLike.model';
-import ActivityEventSchema from '../../schemas/notification/ActivityEvent.model';
-import NotificationSchema from '../../schemas/notification/Notification.model';
-import CreatorFollowSchema from '../../schemas/engagement/CreatorFollow.model';
-import CreatorProfileSchema from '../../schemas/creator/CreatorProfile.model';
-import PortfolioProjectSchema from '../../schemas/project/PortfolioProject.model';
-import ProjectCommentSchema from '../../schemas/engagement/ProjectComment.model';
-import UserSchema from '../../schemas/user/User.model';
+import ProjectLikeSchema from '../../schemas/ProjectLike.model';
+import ActivityEventSchema from '../../schemas/ActivityEvent.model';
+import NotificationSchema from '../../schemas/Notification.model';
+import CreatorFollowSchema from '../../schemas/CreatorFollow.model';
+import CreatorProfileSchema from '../../schemas/CreatorProfile.model';
+import PortfolioProjectSchema from '../../schemas/PortfolioProject.model';
+import ProjectCommentSchema from '../../schemas/ProjectComment.model';
+import UserSchema from '../../schemas/User.model';
 import { ActivityService } from './activity.service';
 
 @Module({

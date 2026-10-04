@@ -1,6 +1,8 @@
+import { MetaCounter } from '../common/meta-counter';
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
-import { CreatorAvailability, ProfileStatus } from '../../enums/creatorhub.enum';
+import { CreatorAvailability } from '../../enums/creator-availability.enum';
+import { ProfileStatus } from '../../enums/profile-status.enum';
 import { MutableEntity } from '../common/entity';
 import { SocialLink } from '../common/social-link';
 
@@ -44,4 +46,13 @@ export class CreatorProfile extends MutableEntity {
 
 	@Field(() => Date, { nullable: true })
 	deletedAt?: Date;
+}
+
+@ObjectType()
+export class Creators {
+	@Field(() => [CreatorProfile])
+	list!: CreatorProfile[];
+
+	@Field(() => [MetaCounter])
+	metaCounter!: MetaCounter[];
 }

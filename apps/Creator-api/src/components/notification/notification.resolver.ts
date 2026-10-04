@@ -1,9 +1,11 @@
+import { Notifications } from '../../libs/dto/notification/notification-result';
 import { UseGuards } from '@nestjs/common';
 import { Args, ID, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { NotificationResult } from '../../libs/dto/notification/notification-result';
+
 import { PageInput } from '../../libs/dto/common/pagination.input';
 import { User } from '../../libs/dto/user/user';
-import { CurrentUser, AuthGuard } from '../auth/guards/auth.guard';
+import { AuthGuard } from '../auth/guards/auth.guard';
+import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { NotificationService } from './notification.service';
 
 @UseGuards(AuthGuard)
@@ -11,9 +13,9 @@ import { NotificationService } from './notification.service';
 export class NotificationResolver {
 	constructor(private readonly notificationService: NotificationService) {}
 
-	@Query(() => [NotificationResult])
+	@Query(() => Notifications)
 	public getNotifications(
-		@CurrentUser() currentUser: User,
+		@AuthMember() currentUser: User,
 		@Args('input', { defaultValue: {} }) input: PageInput,
 		@Args('unreadOnly', { defaultValue: false }) unreadOnly: boolean,
 	) {
@@ -21,15 +23,12 @@ export class NotificationResolver {
 	}
 
 	@Query(() => Int)
-	public getUnreadNotificationCount(@CurrentUser() currentUser: User) {
+	public getUnreadNotificationCount(@AuthMember() currentUser: User) {
 		return this.notificationService.getUnreadCount(currentUser);
 	}
 
 	@Mutation(() => Boolean)
-	public markNotificationRead(
-		@CurrentUser() currentUser: User,
-		@Args('notificationId', { type: () => ID }) id: string,
-	) {
+	public markNotificationRead(@AuthMember() currentUser: User, @Args('notificationId', { type: () => ID }) id: string) {
 		return this.notificationService.markRead(currentUser, id);
 	}
 }

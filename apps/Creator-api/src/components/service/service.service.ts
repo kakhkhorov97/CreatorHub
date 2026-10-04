@@ -3,11 +3,20 @@ import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import { PageInput } from '../../libs/dto/common/pagination.input';
 import { CreatorService } from '../../libs/dto/service/creator-service';
-import { CreateServiceInput, UpdateServiceInput } from '../../libs/dto/service/service.input';
+import { CreateServiceInput } from '../../libs/dto/service/service.input';
+import { UpdateServiceInput } from '../../libs/dto/service/service.update';
 import { User } from '../../libs/dto/user/user';
-import { PricingType, ServiceStatus } from '../../libs/enums/creatorhub.enum';
-import { check, defined, objectId, page, requireRecord, requireActive } from '../../libs/utils/policy';
-import { saveRevision } from '../../libs/utils/save-revision';
+import { PricingType } from '../../libs/enums/pricing-type.enum';
+import { ServiceStatus } from '../../libs/enums/service-status.enum';
+import {
+	check,
+	defined,
+	shapeIntoMongooseObjectId,
+	page,
+	requireRecord,
+	requireCreator,
+} from '../../libs/helpers/policy';
+import { saveRevision } from '../../libs/helpers/save-revision';
 import { CategoriesService } from '../category/category.service';
 import { CreatorsService } from '../creator/creator.service';
 import { VisibilityService } from '../creator/visibility.service';
@@ -24,7 +33,7 @@ export class ServiceService {
 	public async getService(id: string) {
 		const service = requireRecord(
 			await this.serviceModel.findOne({
-				_id: objectId(id),
+				_id: shapeIntoMongooseObjectId(id),
 				status: ServiceStatus.ACTIVE,
 				deletedAt: { $exists: false },
 			}),
@@ -42,20 +51,26 @@ export class ServiceService {
 	}
 
 	public async getMyServices(currentUser: User, input: PageInput) {
+		requireCreator(currentUser);
 		const creator = await this.creators.own(currentUser);
 		const { offset, limit } = page(input);
-		return this.serviceModel
-			.find({ creatorId: creator._id, deletedAt: { $exists: false } })
-			.sort({ createdAt: -1, _id: -1 })
-			.skip(offset)
-			.limit(limit);
+		const query = this.serviceModel.find({ creatorId: creator._id, deletedAt: { $exists: false } });
+		const [list, total] = await Promise.all([
+			query.clone().sort({ createdAt: -1, _id: -1 }).skip(offset).limit(limit),
+			query.countDocuments(),
+		]);
+		return { list, metaCounter: total ? [{ total }] : [] };
 	}
 
 	private async owned(currentUser: User, id: string) {
-		requireActive(currentUser);
+		requireCreator(currentUser);
 		const creator = await this.creators.own(currentUser);
 		return requireRecord(
-			await this.serviceModel.findOne({ _id: objectId(id), creatorId: creator._id, deletedAt: { $exists: false } }),
+			await this.serviceModel.findOne({
+				_id: shapeIntoMongooseObjectId(id),
+				creatorId: creator._id,
+				deletedAt: { $exists: false },
+			}),
 		);
 	}
 
@@ -74,7 +89,7 @@ export class ServiceService {
 	}
 
 	public async createService(currentUser: User, input: CreateServiceInput) {
-		requireActive(currentUser);
+		requireCreator(currentUser);
 		const creator = await this.creators.own(currentUser);
 		const service = new this.serviceModel({ ...defined(input), creatorId: creator._id });
 		await this.validate(service);

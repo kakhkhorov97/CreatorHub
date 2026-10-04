@@ -1,6 +1,8 @@
+import { MetaCounter } from '../common/meta-counter';
 import { Field, ID, Int, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
-import { InquiryEventType, InquiryStatus } from '../../enums/creatorhub.enum';
+import { InquiryEventType } from '../../enums/inquiry-event-type.enum';
+import { InquiryStatus } from '../../enums/inquiry-status.enum';
 import { Entity } from '../common/entity';
 
 @ObjectType()
@@ -25,4 +27,13 @@ export class InquiryEvent extends Entity {
 
 	@Field(() => Int)
 	version!: number;
+}
+
+@ObjectType()
+export class InquiryEvents {
+	@Field(() => [InquiryEvent])
+	list!: InquiryEvent[];
+
+	@Field(() => [MetaCounter])
+	metaCounter!: MetaCounter[];
 }

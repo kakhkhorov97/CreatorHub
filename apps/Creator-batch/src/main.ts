@@ -4,6 +4,8 @@ import { BatchModule } from './batch.module';
 async function bootstrap() {
 	const app = await NestFactory.create(BatchModule);
 
+	app.enableShutdownHooks();
 	await app.listen(process.env.PORT_BATCH ?? 3002);
 }
+
 bootstrap();

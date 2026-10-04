@@ -1,4 +1,4 @@
-import { Field, ID, InputType, Int, PartialType } from '@nestjs/graphql';
+import { Field, ID, InputType, Int } from '@nestjs/graphql';
 import { Transform, Type } from 'class-transformer';
 import {
 	ArrayMaxSize,
@@ -17,7 +17,7 @@ import {
 	ValidateIf,
 	ValidateNested,
 } from 'class-validator';
-import { MediaType } from '../../enums/creatorhub.enum';
+import { MediaType } from '../../enums/media-type.enum';
 
 @InputType()
 export class PortfolioMediaInput {
@@ -29,7 +29,7 @@ export class PortfolioMediaInput {
 	@Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
 	@IsString()
 	@MaxLength(2048)
-	@IsUrl({ protocols: ['https'], require_protocol: true, require_tld: true, disallow_auth: true })
+	@IsUrl({ protocols: ['https', 'http'], require_protocol: true, require_tld: false, disallow_auth: true })
 	url!: string;
 
 	@Field(() => String)
@@ -84,7 +84,7 @@ export class CreateProjectInput {
 	@Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
 	@IsString()
 	@MaxLength(2048)
-	@IsUrl({ protocols: ['https'], require_protocol: true, require_tld: true, disallow_auth: true })
+	@IsUrl({ protocols: ['https', 'http'], require_protocol: true, require_tld: false, disallow_auth: true })
 	coverImageUrl?: string;
 
 	@Field(() => [PortfolioMediaInput], { nullable: true })
@@ -117,6 +117,3 @@ export class CreateProjectInput {
 	@IsUrl({ protocols: ['https'], require_protocol: true, require_tld: true, disallow_auth: true })
 	externalUrl?: string;
 }
-
-@InputType()
-export class UpdateProjectInput extends PartialType(CreateProjectInput, { skipNullProperties: false }) {}

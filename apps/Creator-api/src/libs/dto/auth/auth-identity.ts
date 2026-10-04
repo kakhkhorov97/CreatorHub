@@ -1,7 +1,7 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
 import { MutableEntity } from '../common/entity';
-import { AuthProvider } from '../../enums/creatorhub.enum';
+import { AuthProvider } from '../../enums/auth-provider.enum';
 
 @ObjectType()
 export class AuthIdentity extends MutableEntity {

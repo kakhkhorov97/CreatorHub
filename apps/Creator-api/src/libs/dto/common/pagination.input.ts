@@ -6,9 +6,9 @@ export class PageInput {
 	@Field(() => Int, { nullable: true })
 	@ValidateIf((_object, value) => value !== undefined)
 	@IsInt()
-	@Min(0)
+	@Min(1)
 	@Max(10000)
-	offset?: number;
+	page?: number;
 
 	@Field(() => Int, { nullable: true })
 	@ValidateIf((_object, value) => value !== undefined)

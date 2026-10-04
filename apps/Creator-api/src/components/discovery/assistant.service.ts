@@ -2,7 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CITIES } from '../../libs/dto/common/locations';
 import { DiscoveryInput } from '../../libs/dto/discovery/discovery.input';
-import { check } from '../../libs/utils/policy';
+import { check } from '../../libs/helpers/policy';
 import { CategoriesService } from '../category/category.service';
 import { DiscoveryService } from './discovery.service';
 
@@ -99,9 +99,9 @@ export class AssistantService {
 		return {
 			mode,
 			explanation: `${mode === 'AI' ? 'AI-extracted' : 'Keyword-based'} filters applied to public content. Custom-quote services require a quote; their price is unknown.`,
-			creators,
-			projects,
-			services,
+			creators: creators.list,
+			projects: projects.list,
+			services: services.list,
 		};
 	}
 }

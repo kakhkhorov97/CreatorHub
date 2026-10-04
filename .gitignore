@@ -10,3 +10,5 @@ coverage/
 *.tsbuildinfo
 **/._*
 /docs/
+
+uploads/

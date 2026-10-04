@@ -7,7 +7,7 @@ import { ActivityService } from '../activity/activity.service';
 import { InquiryEvent } from '../../libs/dto/inquiry/inquiry-event';
 import { Notification } from '../../libs/dto/notification/notification';
 import { User } from '../../libs/dto/user/user';
-import { objectId, page, requireRecord } from '../../libs/utils/policy';
+import { shapeIntoMongooseObjectId, page, requireRecord } from '../../libs/helpers/policy';
 
 @Injectable()
 export class NotificationService {
@@ -32,7 +32,7 @@ export class NotificationService {
 			_id: { $in: notifications.map((item) => item.activityEventId).filter(Boolean) },
 		});
 		const activityById = new Map(activities.map((event) => [String(event._id), event]));
-		return Promise.all(
+		const list = await Promise.all(
 			notifications.map(async (item) => {
 				const activity = activityById.get(String(item.activityEventId));
 				const activityEvent = activity && (await this.activityService.visible(activity)) ? activity : null;
@@ -40,6 +40,11 @@ export class NotificationService {
 				return { ...item, event, activityEvent, unavailable: !event && !activityEvent };
 			}),
 		);
+		const total = await this.notificationModel.countDocuments({
+			recipientId: currentUser._id,
+			...(unreadOnly ? { readAt: { $exists: false } } : {}),
+		});
+		return { list, metaCounter: total ? [{ total }] : [] };
 	}
 
 	public getUnreadCount(currentUser: User) {
@@ -47,9 +52,11 @@ export class NotificationService {
 	}
 
 	public async markRead(currentUser: User, id: string) {
-		requireRecord(await this.notificationModel.findOne({ _id: objectId(id), recipientId: currentUser._id }));
+		requireRecord(
+			await this.notificationModel.findOne({ _id: shapeIntoMongooseObjectId(id), recipientId: currentUser._id }),
+		);
 		await this.notificationModel.updateOne(
-			{ _id: objectId(id), recipientId: currentUser._id, readAt: { $exists: false } },
+			{ _id: shapeIntoMongooseObjectId(id), recipientId: currentUser._id, readAt: { $exists: false } },
 			{ $set: { readAt: new Date() } },
 		);
 		return true;

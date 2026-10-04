@@ -1,5 +1,7 @@
 import { Field, ObjectType } from '@nestjs/graphql';
-import { Locale, UserRole, UserStatus } from '../../enums/creatorhub.enum';
+import { Locale } from '../../enums/locale.enum';
+import { UserRole } from '../../enums/user-role.enum';
+import { UserStatus } from '../../enums/user-status.enum';
 import { MutableEntity } from '../common/entity';
 
 @ObjectType()

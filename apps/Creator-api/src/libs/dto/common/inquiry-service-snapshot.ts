@@ -1,5 +1,6 @@
 import { Field, Int, ObjectType } from '@nestjs/graphql';
-import { Currency, PricingType } from '../../enums/creatorhub.enum';
+import { Currency } from '../../enums/currency.enum';
+import { PricingType } from '../../enums/pricing-type.enum';
 
 @ObjectType()
 export class InquiryServiceSnapshot {

@@ -3,7 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, PipelineStage, Types } from 'mongoose';
 import { CreatorProfile } from '../../libs/dto/creator/creator-profile';
 import { User } from '../../libs/dto/user/user';
-import { ProfileStatus, UserStatus } from '../../libs/enums/creatorhub.enum';
+import { ProfileStatus } from '../../libs/enums/profile-status.enum';
+import { UserStatus } from '../../libs/enums/user-status.enum';
 
 @Injectable()
 export class VisibilityService {

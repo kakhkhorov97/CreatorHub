@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import { Category } from '../../libs/dto/category/category';
-import { CategoryInput, UpdateCategoryInput } from '../../libs/dto/category/category.input';
+import { CategoryInput } from '../../libs/dto/category/category.input';
+import { UpdateCategoryInput } from '../../libs/dto/category/category.update';
 import { User } from '../../libs/dto/user/user';
-import { check, defined, objectId, requireAdmin, requireRecord } from '../../libs/utils/policy';
+import { check, defined, shapeIntoMongooseObjectId, requireAdmin, requireRecord } from '../../libs/helpers/policy';
 
 @Injectable()
 export class CategoriesService {
@@ -30,7 +31,7 @@ export class CategoriesService {
 		requireAdmin(currentUser);
 		return requireRecord(
 			await this.categories.findByIdAndUpdate(
-				objectId(id),
+				shapeIntoMongooseObjectId(id),
 				{ $set: defined(input) },
 				{ new: true, runValidators: true },
 			),

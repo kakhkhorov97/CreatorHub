@@ -1,3 +1,4 @@
+import { MetaCounter } from '../common/meta-counter';
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
 import { Entity } from '../common/entity';
@@ -18,4 +19,13 @@ export class InquiryMessage extends Entity {
 
 	@Field(() => Date, { nullable: true })
 	readAt?: Date;
+}
+
+@ObjectType()
+export class InquiryMessages {
+	@Field(() => [InquiryMessage])
+	list!: InquiryMessage[];
+
+	@Field(() => [MetaCounter])
+	metaCounter!: MetaCounter[];
 }

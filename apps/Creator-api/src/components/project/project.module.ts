@@ -1,8 +1,8 @@
 import { ActivityModule } from '../activity/activity.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { MediaPolicy } from '../../libs/utils/media-policy.service';
-import PortfolioProjectSchema from '../../schemas/project/PortfolioProject.model';
+import { MediaPolicy } from '../../libs/helpers/media-policy.service';
+import PortfolioProjectSchema from '../../schemas/PortfolioProject.model';
 import { AuthModule } from '../auth/auth.module';
 import { CategoryModule } from '../category/category.module';
 import { CreatorModule } from '../creator/creator.module';

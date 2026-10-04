@@ -1,12 +1,13 @@
-import AuthIdentitySchema from '../../schemas/auth/AuthIdentity.model';
+import { RolesGuard } from './guards/roles.guard';
+import AuthIdentitySchema from '../../schemas/AuthIdentity.model';
 import { SocialAuthService } from './social-auth.service';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
-import AuthSessionSchema from '../../schemas/auth/AuthSession.model';
-import AuthTokenSchema from '../../schemas/auth/AuthToken.model';
-import UserSchema from '../../schemas/user/User.model';
+import AuthSessionSchema from '../../schemas/AuthSession.model';
+import AuthTokenSchema from '../../schemas/AuthToken.model';
+import UserSchema from '../../schemas/User.model';
 import { AuthResolver } from './auth.resolver';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './guards/auth.guard';
@@ -29,7 +30,7 @@ import { MailService } from './mail.service';
 			}),
 		}),
 	],
-	providers: [SocialAuthService, AuthService, AuthGuard, AuthResolver, MailService],
-	exports: [AuthService, AuthGuard],
+	providers: [RolesGuard, SocialAuthService, AuthService, AuthGuard, AuthResolver, MailService],
+	exports: [RolesGuard, AuthService, AuthGuard],
 })
 export class AuthModule {}

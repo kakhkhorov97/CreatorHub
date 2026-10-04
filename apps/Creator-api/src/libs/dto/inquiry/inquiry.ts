@@ -1,6 +1,9 @@
+import { MetaCounter } from '../common/meta-counter';
 import { Field, ID, Int, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
-import { Currency, InquiryOutcome, InquiryStatus } from '../../enums/creatorhub.enum';
+import { Currency } from '../../enums/currency.enum';
+import { InquiryOutcome } from '../../enums/inquiry-outcome.enum';
+import { InquiryStatus } from '../../enums/inquiry-status.enum';
 import { MutableEntity } from '../common/entity';
 import { InquiryServiceSnapshot } from '../common/inquiry-service-snapshot';
 
@@ -56,4 +59,13 @@ export class Inquiry extends MutableEntity {
 
 	@Field(() => Int)
 	version!: number;
+}
+
+@ObjectType()
+export class Inquiries {
+	@Field(() => [Inquiry])
+	list!: Inquiry[];
+
+	@Field(() => [MetaCounter])
+	metaCounter!: MetaCounter[];
 }

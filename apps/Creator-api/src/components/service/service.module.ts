@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import CreatorServiceSchema from '../../schemas/service/CreatorService.model';
+import CreatorServiceSchema from '../../schemas/CreatorService.model';
 import { AuthModule } from '../auth/auth.module';
 import { CategoryModule } from '../category/category.module';
 import { CreatorModule } from '../creator/creator.module';

@@ -2,10 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import { User } from '../../libs/dto/user/user';
-import { UpdateUserInput } from '../../libs/dto/user/user.input';
-import { UserStatus } from '../../libs/enums/creatorhub.enum';
-import { MediaPolicy } from '../../libs/utils/media-policy.service';
-import { check, defined, objectId, requireAdmin, requireRecord, sameId } from '../../libs/utils/policy';
+import { UpdateUserInput } from '../../libs/dto/user/user.update';
+import { UserStatus } from '../../libs/enums/user-status.enum';
+import { MediaPolicy } from '../../libs/helpers/media-policy.service';
+import {
+	check,
+	defined,
+	shapeIntoMongooseObjectId,
+	requireAdmin,
+	requireRecord,
+	sameId,
+} from '../../libs/helpers/policy';
 import { AuthService } from '../auth/auth.service';
 
 @Injectable()
@@ -46,7 +53,7 @@ export class UsersService {
 		return this.connection.transaction(async (session) => {
 			const user = requireRecord(
 				await this.users.findOneAndUpdate(
-					{ _id: objectId(id), status: { $ne: UserStatus.DELETED } },
+					{ _id: shapeIntoMongooseObjectId(id), status: { $ne: UserStatus.DELETED } },
 					{ $set: { status: suspended ? UserStatus.SUSPENDED : UserStatus.ACTIVE } },
 					{ new: true, session },
 				),

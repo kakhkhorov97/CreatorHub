@@ -2,9 +2,11 @@ import { ConfigModule } from '@nestjs/config';
 import { createConnection } from 'mongoose';
 import { validateEnvironment } from '../libs/config';
 import { User } from '../libs/dto/user/user';
-import { AuthProvider, UserRole, UserStatus } from '../libs/enums/creatorhub.enum';
-import AuthIdentitySchema from '../schemas/auth/AuthIdentity.model';
-import UserSchema from '../schemas/user/User.model';
+import { AuthProvider } from '../libs/enums/auth-provider.enum';
+import { UserRole } from '../libs/enums/user-role.enum';
+import { UserStatus } from '../libs/enums/user-status.enum';
+import AuthIdentitySchema from '../schemas/AuthIdentity.model';
+import UserSchema from '../schemas/User.model';
 
 // An explicit operator command, never a public registration parameter.
 async function grantAdmin() {
@@ -37,6 +39,7 @@ async function grantAdmin() {
 		await connection.close();
 	}
 }
+
 grantAdmin().catch((error) => {
 	console.error(error instanceof Error ? error.message : 'Administrator setup failed');
 	process.exitCode = 1;

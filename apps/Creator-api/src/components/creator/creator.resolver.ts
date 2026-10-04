@@ -2,10 +2,12 @@ import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { CreatorIdentity } from '../../libs/dto/creator/creator-identity';
 import { CreatorProfile } from '../../libs/dto/creator/creator-profile';
-import { CreateCreatorInput, UpdateCreatorInput } from '../../libs/dto/creator/creator.input';
+import { CreateCreatorInput } from '../../libs/dto/creator/creator.input';
+import { UpdateCreatorInput } from '../../libs/dto/creator/creator.update';
 import { User } from '../../libs/dto/user/user';
-import { ProfileStatus } from '../../libs/enums/creatorhub.enum';
-import { CurrentUser, AuthGuard } from '../auth/guards/auth.guard';
+import { ProfileStatus } from '../../libs/enums/profile-status.enum';
+import { AuthGuard } from '../auth/guards/auth.guard';
+import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { CreatorsService } from './creator.service';
 
 @Resolver(() => CreatorProfile)
@@ -24,26 +26,26 @@ export class CreatorsResolver {
 
 	@UseGuards(AuthGuard)
 	@Query(() => CreatorProfile)
-	myCreatorProfile(@CurrentUser() currentUser: User) {
+	myCreatorProfile(@AuthMember() currentUser: User) {
 		return this.creators.own(currentUser);
 	}
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => CreatorProfile)
-	createCreatorProfile(@CurrentUser() currentUser: User, @Args('input') input: CreateCreatorInput) {
+	createCreatorProfile(@AuthMember() currentUser: User, @Args('input') input: CreateCreatorInput) {
 		return this.creators.create(currentUser, input);
 	}
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => CreatorProfile)
-	updateCreatorProfile(@CurrentUser() currentUser: User, @Args('input') input: UpdateCreatorInput) {
+	updateCreatorProfile(@AuthMember() currentUser: User, @Args('input') input: UpdateCreatorInput) {
 		return this.creators.update(currentUser, input);
 	}
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => CreatorProfile)
 	setCreatorProfileStatus(
-		@CurrentUser() currentUser: User,
+		@AuthMember() currentUser: User,
 		@Args('status', { type: () => ProfileStatus }) status: ProfileStatus,
 	) {
 		return this.creators.setStatus(currentUser, status);
@@ -51,7 +53,7 @@ export class CreatorsResolver {
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => Boolean)
-	deleteCreatorProfile(@CurrentUser() currentUser: User) {
+	deleteCreatorProfile(@AuthMember() currentUser: User) {
 		return this.creators.delete(currentUser);
 	}
 }

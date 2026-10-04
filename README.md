@@ -2,22 +2,23 @@
 
 NestJS, GraphQL, and MongoDB backend for discovering creators, browsing portfolios and services, and managing private project inquiries.
 
-The implementation follows [the ER guide](docs/CreatorHub-ER-modeling-guide.md) and [the workflow](docs/creatorhub-workflow.png). The existing `apps/Creator-api` and `apps/Creator-batch` paths are retained deliberately. The code continues to use separate schemas, enums, DTOs, modules, services, and resolvers. The frontend is a separate project.
+The implementation follows [the ER guide](docs/CreatorHub-ER-modeling-guide.md) and [the workflow](docs/creatorhub-workflow.png). The existing `apps/Creator-api` and `apps/Creator-batch` paths are retained deliberately. The code uses flat `schemas/*.model.ts`, separate input/update DTO files, `AuthMember` and `Roles` decorators, and separate like/follow/comment/save modules, services and resolvers. Password hashing uses `bcryptjs` inside `AuthService`, as in Nestar. The frontend is a separate project.
 
 ## Local setup
 
-Use Node.js 20 or later and npm. MongoDB must support transactions. A standalone MongoDB server will be rejected at startup.
+Use Node.js 20.19 or later and npm. This supports the restored UUID package in the CommonJS build. MongoDB must support transactions. A standalone MongoDB server will be rejected at startup.
 
 1. Run `npm ci`.
-2. Copy `.env.example` to `.env`.
+2. Create a local `.env` with `MONGO_DEV`, `SECRET_TOKEN`, and `FRONTEND_URL`. See the configuration table in [the backend guide](docs/BACKEND_REVIEW.md).
 3. Generate a secret with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` and put it in `SECRET_TOKEN`.
 4. Start the supplied local replica set with `docker compose up -d --wait`, or set `MONGO_DEV` to an existing replica-set connection string.
 5. Run `npm run db:setup` to create indexes and seed categories.
 6. Run `npm run start:dev`.
+7. In another terminal, run `npm run start:dev:batch` for public activity notification delivery.
 
-The API defaults to `http://localhost:3001/graphql`. `GET /` returns `CreatorHub API`. The GraphQL playground is available outside production. The Docker database is bound to localhost and has no authentication; it is for local development only. Docker itself is not required when using an existing replica set.
+The API defaults to `http://localhost:7001/graphql`. `GET /` returns `CreatorHub API`. The GraphQL playground is available outside production. The Docker database is bound to localhost and has no authentication; it is for local development only. Docker itself is not required when using an existing replica set.
 
-`db:setup` creates the named unique, query, partial, and TTL indexes. It does not drop indexes or migrate existing records. If an older CreatorHub database already contains users.email/passwordHash or notifications.eventId, follow [the migration notes](docs/ER_UPDATE.md) before applying this source. Repeated runs preserve existing category edits. Use a separate `creatorhub` database for this product.
+`db:setup` creates the named unique, query, partial, and TTL indexes. It does not drop indexes or migrate existing records. If an older database contains users.email/passwordHash or notifications.eventId, it needs a separate migration before using the current identity/event model. No data migration is included here. Repeated runs preserve existing category edits. Use a separate `creatorhub` database for this product.
 
 ## Accounts and administrator access
 
@@ -50,10 +51,10 @@ For social login, configure `GOOGLE_CLIENT_ID`, `TELEGRAM_CLIENT_ID`, and `KAKAO
 - The creator's first reply moves the inquiry into discussion. Messages use a client-generated UUID to deduplicate retries.
 - Terminal actions follow the guide. A closed, cancelled, or declined inquiry cannot reopen or accept new messages.
 - Followers receive in-app alerts only for a project’s first publication. Profile/service edits and archive/republish do not alert followers. New likes, comments, and follows notify the creator.
-- Public activities are stored with the source action in one transaction; the API polls pending deliveries every five seconds. Delivery uses durable leases, batches of 100 followers, transactional checkpoints, and unique recipient/event keys.
+- Public activities are stored with the source action in one transaction; the batch application polls pending deliveries every five seconds using `@nestjs/schedule`. Delivery uses durable leases, batches of 100 followers, transactional checkpoints, and unique recipient/event keys.
 - Every submitted inquiry action creates its history event and the other participant's notification in the same transaction.
 
-All list inputs default to 20 items and accept at most 50. Offset pagination is bounded at 10,000. Lists use an ID tie-breaker, but are not snapshot pagination under concurrent edits.
+Paginated list inputs use `page` starting at 1 and `limit` defaulting to 20, with a maximum of 50. The maximum page is 10,000. Responses contain `list` and `metaCounter`, where the total counts all matching records before pagination. Categories, cities and authentication identities remain unpaginated arrays. Lists use an ID tie-breaker, but are not snapshot pagination under concurrent edits.
 
 ## API reference
 
@@ -76,7 +77,7 @@ All list inputs default to 20 items and accept at most 50. Offset pagination is 
 The external service contracts are documented in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 - Email: configure `MAIL_WEBHOOK_URL` and `MAIL_WEBHOOK_TOKEN` for delivery. Development files are the fallback; production requires an email adapter.
-- Media: configure `MEDIA_BASE_URL` for your storage/CDN. Accepted media URLs must be under `<base>/<authenticated-user-id>/`. This backend validates URL origin, account path, and supported extensions. It does not upload objects or inspect file contents; the storage upload path must enforce ownership and content validation.
+- Media: `imageUploader` and `imagesUploader` restore local GraphQL uploads. Use target `avatar` or `project`, up to 10 MB per file and ten files per request. Files are stored in `uploads/<userId>/<target>/` and served under `/uploads`. Configure `UPLOAD_BASE_URL` to the public API URL ending in `/uploads`; production requires HTTPS. Existing `MEDIA_BASE_URL` references remain accepted for compatibility.
 - AI: optionally configure `DISCOVERY_PARSER_URL` and `DISCOVERY_PARSER_TOKEN` for a structured-filter AI adapter. Without an adapter, the response explicitly reports `KEYWORD`. This fallback does not claim to be an LLM. Provider results cannot bypass public visibility checks or submit inquiries.
 
 Do not use the example media hostname in a live deployment. Email and AI adapters, media storage, and the separate frontend are not provisioned by this repository.
@@ -98,9 +99,9 @@ Integration tests start an isolated MongoDB replica set, use real indexes and tr
 
 ## Deployment and portfolio notes
 
-Set `NODE_ENV=production`, `MONGO_PROD`, a strong `SECRET_TOKEN` or `JWT_SECRET`, an HTTPS `FRONTEND_URL`, real `MEDIA_BASE_URL`, and email webhook credentials. Run `npm run db:setup` before serving traffic, then build and run `npm run start:prod`. Keep secrets outside source control and terminate HTTPS at the deployment ingress.
+Set `NODE_ENV=production`, `MONGO_PROD`, a strong `SECRET_TOKEN` or `JWT_SECRET`, an HTTPS `FRONTEND_URL`, an HTTPS `UPLOAD_BASE_URL`, and email webhook credentials. Run `npm run db:setup` before serving traffic, then build both apps and run `npm run start:prod` and `npm run start:prod:batch`. Keep secrets outside source control and terminate HTTPS at the deployment ingress.
 
-The original batch app path is retained as an inactive entry point on port 3002, so it does not conflict with the API. Version 1 has no ranking jobs or automatic inquiry closure; MongoDB TTL indexes handle expired authentication record cleanup.
+The batch app runs notification delivery on port 3002. Keep it running alongside the API. The API records activity events but does not schedule their delivery. Version 1 has no ranking jobs or automatic inquiry closure; MongoDB TTL indexes handle expired authentication record cleanup.
 
 This is an adaptation of a Nestar starter. CreatorHub-specific work includes the 17-collection domain design, separate portfolios and services, revocable authentication, participant-only inquiries, immutable request snapshots, transaction-backed events, and acceptance tests. The starter's property, agent, board, view-counter, and ranking logic has been removed.
 

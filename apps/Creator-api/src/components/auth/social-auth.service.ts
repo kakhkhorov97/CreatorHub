@@ -1,7 +1,7 @@
 import { Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createPublicKey, JsonWebKey, verify } from 'node:crypto';
-import { AuthProvider } from '../../libs/enums/creatorhub.enum';
+import { AuthProvider } from '../../libs/enums/auth-provider.enum';
 import { SocialLoginInput } from '../../libs/dto/auth/auth.input';
 import { newToken } from './password';
 
@@ -26,6 +26,7 @@ const providers = {
 @Injectable()
 export class SocialAuthService {
 	private readonly challenges = new Map<string, { provider: AuthProvider; expiresAt: number; userId?: string }>();
+
 	constructor(private readonly config: ConfigService) {}
 
 	private settings(provider: AuthProvider) {

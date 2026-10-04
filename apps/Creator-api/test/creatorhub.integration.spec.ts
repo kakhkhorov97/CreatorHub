@@ -1,3 +1,8 @@
+import { LoggingInterceptor } from '../src/libs/interceptors/logging.interceptor';
+import { configureUploads } from '../src/components/upload/upload.middleware';
+import { mkdtemp, rm, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
@@ -16,6 +21,7 @@ describe('CreatorHub workflow', () => {
 	let mongo: MongoMemoryReplSet;
 	let app: INestApplication;
 	let db: Connection;
+	let uploadDirectory: string;
 	const mail = new Map<string, string>();
 	let creator: any, client: any, outsider: any, admin: any;
 	let categoryId: string, creatorId: string, projectId: string, serviceId: string;
@@ -82,6 +88,9 @@ describe('CreatorHub workflow', () => {
 			binary: { version: '7.0.24', downloadDir: '.local/mongodb' },
 		});
 		process.env.NODE_ENV = 'test';
+		uploadDirectory = await mkdtemp(join(tmpdir(), 'creatorhub-uploads-'));
+		process.env.UPLOAD_DIR = uploadDirectory;
+		process.env.UPLOAD_BASE_URL = 'http://localhost:7001/uploads';
 		process.env.MONGO_DEV = mongo.getUri('creatorhub_test');
 		process.env.JWT_SECRET = 'test-only-creatorhub-secret-with-more-than-32-characters';
 		process.env.MEDIA_BASE_URL = 'https://media.example.com/creatorhub';
@@ -97,6 +106,8 @@ describe('CreatorHub workflow', () => {
 			})
 			.compile();
 		app = module.createNestApplication();
+		configureUploads(app);
+		app.useGlobalInterceptors(new LoggingInterceptor());
 		app.useGlobalPipes(
 			new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true, forbidUnknownValues: true }),
 		);
@@ -113,6 +124,7 @@ describe('CreatorHub workflow', () => {
 	afterAll(async () => {
 		if (app) await app.close();
 		if (mongo) await mongo.stop();
+		if (uploadDirectory) await rm(uploadDirectory, { recursive: true, force: true });
 	});
 
 	it('normalizes email, reserves it, and rejects role injection and null input fields', async () => {
@@ -152,7 +164,7 @@ describe('CreatorHub workflow', () => {
 		expect(identity.verifiedAt).toBeUndefined();
 		expect(identity.passwordHash).toBeUndefined();
 		const privateIdentity = await db.model('AuthIdentity').findById(identity._id).select('+passwordHash');
-		expect(privateIdentity.passwordHash).toMatch(/^scrypt:/);
+		expect(privateIdentity.passwordHash).toMatch(/^\$2[ab]\$12\$/);
 		expect((await db.model('User').findById(phone.user._id).lean())['passwordHash']).toBeUndefined();
 		expect(mail.has('+821023456789:EMAIL_VERIFY')).toBe(false);
 		const usersBefore = await db.model('User').countDocuments();
@@ -314,6 +326,14 @@ describe('CreatorHub workflow', () => {
 			creator.accessToken,
 		);
 		creatorId = created.createCreatorProfile._id;
+		for (const operation of [
+			'mutation{createProject(input:{title:"Premature",slug:"premature"}){_id}}',
+			'mutation{createService(input:{title:"Premature"}){_id}}',
+			'query{getMyProjects{list{_id}}}',
+			'query{getMyServices{list{_id}}}',
+		])
+			expect((await gql(operation, {}, creator.accessToken)).errors?.[0].extensions.code).toBe('FORBIDDEN');
+
 		expect(created.createCreatorProfile.status).toBe('DRAFT');
 		expect(
 			(await gql('mutation{setCreatorProfileStatus(status:PUBLISHED){_id}}', {}, creator.accessToken)).errors,
@@ -333,15 +353,15 @@ describe('CreatorHub workflow', () => {
 		);
 		await ok('mutation{setCreatorProfileStatus(status:PUBLISHED){status publishedAt}}', {}, creator.accessToken);
 		expect((await ok('query{me{role}}', {}, creator.accessToken)).me.role).toBe('CREATOR');
-		expect(
-			(
-				await gql(
-					'mutation($input:CreateCreatorInput!){createCreatorProfile(input:$input){_id}}',
-					{ input: { slug: 'second-profile' } },
-					creator.accessToken,
-				)
-			).errors,
-		).toBeDefined();
+		const repeated = await ok(
+			'mutation($input:CreateCreatorInput!){createCreatorProfile(input:$input){_id slug}}',
+			{ input: { slug: 'second-profile' } },
+			creator.accessToken,
+		);
+		expect(repeated.createCreatorProfile._id).toBe(creatorId);
+		expect(repeated.createCreatorProfile.slug).toBe('studio-seoul');
+		expect(await db.model('CreatorProfile').countDocuments({ userId: creator.user._id })).toBe(1);
+
 		expect(
 			(
 				await gql(
@@ -351,6 +371,66 @@ describe('CreatorHub workflow', () => {
 				)
 			).errors,
 		).toBeDefined();
+	});
+
+	it('handles concurrent onboarding and refuses to recreate a deleted profile', async () => {
+		const person = await account('onboarding-retry@example.com');
+		const operation = 'mutation($input:CreateCreatorInput!){createCreatorProfile(input:$input){_id}}';
+		const results = await Promise.all([
+			ok(operation, { input: { slug: 'retry-onboarding' } }, person.accessToken),
+			ok(operation, { input: { slug: 'retry-onboarding' } }, person.accessToken),
+		]);
+		expect(results[0].createCreatorProfile._id).toBe(results[1].createCreatorProfile._id);
+		await ok('mutation{deleteCreatorProfile}', {}, person.accessToken);
+		expect((await gql(operation, { input: { slug: 'retry-deleted' } }, person.accessToken)).errors?.[0].message).toBe(
+			'This creator profile was deleted and cannot be recreated',
+		);
+	});
+
+	it('uploads local media with ownership, type and path checks', async () => {
+		const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+		const upload = async (token: string | undefined, target = 'avatar', bytes = png, mime = 'image/png') =>
+			request(app.getHttpServer())
+				.post('/graphql')
+				.set('Authorization', token ? `Bearer ${token}` : '')
+				.set('Apollo-Require-Preflight', 'true')
+				.field(
+					'operations',
+					JSON.stringify({
+						query: 'mutation($file:Upload!,$target:String!){imageUploader(file:$file,target:$target)}',
+						variables: { file: null, target },
+					}),
+				)
+				.field('map', JSON.stringify({ '0': ['variables.file'] }))
+				.attach('0', bytes, { filename: 'example.png', contentType: mime });
+		const accepted = await upload(client.accessToken);
+		expect(accepted.body.errors).toBeUndefined();
+		const url = accepted.body.data.imageUploader;
+		expect(url).toContain(`/uploads/${client.user._id}/avatar/`);
+		await request(app.getHttpServer()).get(new URL(url).pathname).expect(200);
+		await ok(
+			'mutation($input:UpdateUserInput!){updateMe(input:$input){avatarUrl}}',
+			{ input: { avatarUrl: url } },
+			client.accessToken,
+		);
+		expect(
+			(
+				await gql(
+					'mutation($input:UpdateUserInput!){updateMe(input:$input){avatarUrl}}',
+					{ input: { avatarUrl: url } },
+					outsider.accessToken,
+				)
+			).errors,
+		).toBeDefined();
+		expect((await upload(undefined)).body.errors).toBeDefined();
+		expect((await upload(client.accessToken, '../../escape')).body.errors).toBeDefined();
+		expect(
+			(await upload(client.accessToken, 'avatar', Buffer.from('<script>alert(1)</script>'))).body.errors,
+		).toBeDefined();
+		expect((await upload(client.accessToken, 'avatar', png, 'text/html')).body.errors).toBeDefined();
+		const oversized = await upload(client.accessToken, 'avatar', Buffer.alloc(10_000_001));
+		expect(oversized.body.errors).toBeDefined();
+		expect(await readdir(join(uploadDirectory, '.pending'))).toEqual([]);
 	});
 
 	it('publishes work and services with validated fields and media ownership', async () => {
@@ -420,13 +500,36 @@ describe('CreatorHub workflow', () => {
 		);
 	});
 
+	it('returns page totals and empty later pages without exposing draft projects', async () => {
+		await ok(
+			'mutation{createProject(input:{title:"Private draft",slug:"private-page-draft"}){_id}}',
+			{},
+			creator.accessToken,
+		);
+		const operation = 'query($input:DiscoveryInput!){getProjects(input:$input){list{_id} metaCounter{total}}}';
+		const first = await ok(operation, { input: { creatorId, page: 1, limit: 1 } });
+		expect(first.getProjects.list.map((p: any) => p._id)).toEqual([projectId]);
+		expect(first.getProjects.metaCounter).toEqual([{ total: 1 }]);
+		const next = await ok(operation, { input: { creatorId, page: 2, limit: 1 } });
+		expect(next.getProjects.list).toEqual([]);
+		expect(next.getProjects.metaCounter).toEqual([{ total: 1 }]);
+		expect((await gql(operation, { input: { page: 0 } })).errors).toBeDefined();
+		const own = await ok(
+			'query{getMyProjects(input:{page:1,limit:1}){list{_id} metaCounter{total}}}',
+			{},
+			creator.accessToken,
+		);
+		expect(own.getMyProjects.list).toHaveLength(1);
+		expect(own.getMyProjects.metaCounter).toEqual([{ total: 2 }]);
+	});
+
 	it('filters public discovery and provides an explicitly labeled assistant fallback', async () => {
 		const result = await ok(
-			'query($input:DiscoveryInput!){getCreators(input:$input){_id identity{displayName}} getProjects(input:$input){_id} getServices(input:$input){_id}}',
+			'query ($input: DiscoveryInput!) {\n  getCreators(input: $input) {\n    list {\n      _id\n      identity {\n        displayName\n      }\n    }\n  }\n  getProjects(input: $input) {\n    list {\n      _id\n    }\n  }\n  getServices(input: $input) {\n    list {\n      _id\n    }\n  }\n}',
 			{ input: { city: 'seoul', remoteAvailable: true, categoryId } },
 		);
-		expect(result.getCreators.map((item: any) => item._id)).toContain(creatorId);
-		expect(result.getProjects.map((item: any) => item._id)).toContain(projectId);
+		expect(result.getCreators.list.map((item: any) => item._id)).toContain(creatorId);
+		expect(result.getProjects.list.map((item: any) => item._id)).toContain(projectId);
 		const assistant = await ok('query($input:AssistantInput!){discoverCreators(input:$input){mode creators{_id}}}', {
 			input: { request: '서울 그래픽 디자인 remote' },
 		});
@@ -462,7 +565,11 @@ describe('CreatorHub workflow', () => {
 		);
 		expect(edit.editProjectComment.status).toBe('HIDDEN');
 		expect(
-			(await ok('query($id:ID!){getProjectComments(projectId:$id){_id}}', { id: projectId })).getProjectComments,
+			(
+				await ok('query ($id: ID!) {\n  getProjectComments(projectId: $id) {\n    list {\n      _id\n    }\n  }\n}', {
+					id: projectId,
+				})
+			).getProjectComments.list,
 		).toHaveLength(0);
 	});
 
@@ -574,9 +681,13 @@ describe('CreatorHub workflow', () => {
 		const sent = await submit(await draft());
 		await ok('mutation{setCreatorProfileStatus(status:HIDDEN){status}}', {}, creator.accessToken);
 		expect((await gql('query($id:ID!){getProject(projectId:$id){title}}', { id: projectId })).errors).toBeDefined();
-		const saved = await ok('query{getSavedProjects{available project{title}}}', {}, client.accessToken);
-		expect(saved.getSavedProjects[0].available).toBe(false);
-		expect(saved.getSavedProjects[0].project).toBeNull();
+		const saved = await ok(
+			'{\n  getSavedProjects {\n    list {\n      available\n      project {\n        title\n      }\n    }\n  }\n}',
+			{},
+			client.accessToken,
+		);
+		expect(saved.getSavedProjects.list[0].available).toBe(false);
+		expect(saved.getSavedProjects.list[0].project).toBeNull();
 		expect((await message(sent, creator.accessToken)).errors).toBeUndefined();
 		await ok('mutation{setCreatorProfileStatus(status:PUBLISHED){status}}', {}, creator.accessToken);
 	});
@@ -771,8 +882,12 @@ describe('CreatorHub workflow', () => {
 		await ok(mark, { id }, client.accessToken);
 		expect((await db.model('Notification').findById(id)).readAt).toEqual(first);
 		expect((await db.model('InquiryMessage').findById(response.data.sendInquiryMessage._id)).readAt).toBeUndefined();
-		const inbox = await ok('query{getNotifications{recipientId event{inquiryId}}}', {}, client.accessToken);
-		expect(inbox.getNotifications.every((item: any) => item.recipientId === client.user._id)).toBe(true);
+		const inbox = await ok(
+			'{\n  getNotifications {\n    list {\n      recipientId\n      event {\n        inquiryId\n      }\n    }\n  }\n}',
+			{},
+			client.accessToken,
+		);
+		expect(inbox.getNotifications.list.every((item: any) => item.recipientId === client.user._id)).toBe(true);
 	});
 
 	it('invalidates replaced reset tokens and revokes all sessions on successful reset', async () => {
@@ -881,8 +996,12 @@ describe('CreatorHub workflow', () => {
 			await db.model('Notification').countDocuments({ recipientId: client.user._id, activityEventId: publication._id }),
 		).toBe(1);
 		await ok(publish, { id, status: 'ARCHIVED' }, creator.accessToken);
-		const hidden = await ok('query{getNotifications{activityEvent{projectId} unavailable}}', {}, client.accessToken);
-		expect(hidden.getNotifications.some((item) => item.unavailable)).toBe(true);
+		const hidden = await ok(
+			'{\n  getNotifications {\n    list {\n      activityEvent {\n        projectId\n      }\n      unavailable\n    }\n  }\n}',
+			{},
+			client.accessToken,
+		);
+		expect(hidden.getNotifications.list.some((item) => item.unavailable)).toBe(true);
 		await ok(publish, { id, status: 'PUBLISHED' }, creator.accessToken);
 		await activity.deliverPending();
 		expect(await db.model('ActivityEvent').countDocuments({ projectId: id, type: 'PROJECT_PUBLISHED' })).toBe(1);
@@ -997,9 +1116,11 @@ describe('CreatorHub workflow', () => {
 			admin.accessToken,
 		);
 		expect((await gql('query{me{_id}}', {}, creator.accessToken)).errors).toBeDefined();
-		const publicData = await ok('query{getProjects{_id} getServices{_id}}');
-		expect(publicData.getProjects).toHaveLength(0);
-		expect(publicData.getServices).toHaveLength(0);
+		const publicData = await ok(
+			'{\n  getProjects {\n    list {\n      _id\n    }\n  }\n  getServices {\n    list {\n      _id\n    }\n  }\n}',
+		);
+		expect(publicData.getProjects.list).toHaveLength(0);
+		expect(publicData.getServices.list).toHaveLength(0);
 	});
 	it('runs the index/seed and administrator CLI commands against the isolated database', async () => {
 		const run = promisify(execFile);
@@ -1026,5 +1147,21 @@ describe('CreatorHub workflow', () => {
 		);
 		expect(promoted.stdout).toContain('Administrator access granted');
 		expect((await db.model('User').findById(client.user._id)).role).toBe('ADMIN');
+	});
+	it('schedules notification delivery in the batch app', async () => {
+		const { BatchModule } = jest.requireActual('../../Creator-batch/src/batch.module');
+		const delivery = jest.fn().mockResolvedValue(undefined);
+		const worker = await Test.createTestingModule({ imports: [BatchModule] })
+			.overrideProvider(ActivityService)
+			.useValue({ deliverPending: delivery })
+			.compile();
+		try {
+			await worker.init();
+			await new Promise((resolve) => setTimeout(resolve, 5200));
+			expect(delivery).toHaveBeenCalledTimes(1);
+			expect((app.get(ActivityService) as any).timer).toBeUndefined();
+		} finally {
+			await worker.close();
+		}
 	});
 });

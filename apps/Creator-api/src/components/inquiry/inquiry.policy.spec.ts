@@ -1,4 +1,5 @@
-import { InquiryOutcome as Outcome, InquiryStatus as Status } from '../../libs/enums/creatorhub.enum';
+import { InquiryOutcome as Outcome } from '../../libs/enums/inquiry-outcome.enum';
+import { InquiryStatus as Status } from '../../libs/enums/inquiry-status.enum';
 import { nextInquiryStatus } from './inquiry.policy';
 
 describe('inquiry lifecycle boundaries', () => {

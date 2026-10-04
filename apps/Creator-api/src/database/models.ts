@@ -1,23 +1,27 @@
-import ActivityEventSchema from '../schemas/notification/ActivityEvent.model';
-import CreatorFollowSchema from '../schemas/engagement/CreatorFollow.model';
-import AuthIdentitySchema from '../schemas/auth/AuthIdentity.model';
+import SiteContentSchema from '../schemas/SiteContent.model';
+import CreativeEventSchema from '../schemas/CreativeEvent.model';
+import ActivityEventSchema from '../schemas/ActivityEvent.model';
+import CreatorFollowSchema from '../schemas/CreatorFollow.model';
+import AuthIdentitySchema from '../schemas/AuthIdentity.model';
 import { Connection } from 'mongoose';
-import AuthSessionSchema from '../schemas/auth/AuthSession.model';
-import AuthTokenSchema from '../schemas/auth/AuthToken.model';
-import CategorySchema from '../schemas/category/Category.model';
-import CreatorProfileSchema from '../schemas/creator/CreatorProfile.model';
-import CreatorServiceSchema from '../schemas/service/CreatorService.model';
-import InquirySchema from '../schemas/inquiry/Inquiry.model';
-import InquiryEventSchema from '../schemas/inquiry/InquiryEvent.model';
-import InquiryMessageSchema from '../schemas/inquiry/InquiryMessage.model';
-import NotificationSchema from '../schemas/notification/Notification.model';
-import PortfolioProjectSchema from '../schemas/project/PortfolioProject.model';
-import ProjectCommentSchema from '../schemas/engagement/ProjectComment.model';
-import ProjectLikeSchema from '../schemas/engagement/ProjectLike.model';
-import SavedProjectSchema from '../schemas/engagement/SavedProject.model';
-import UserSchema from '../schemas/user/User.model';
+import AuthSessionSchema from '../schemas/AuthSession.model';
+import AuthTokenSchema from '../schemas/AuthToken.model';
+import CategorySchema from '../schemas/Category.model';
+import CreatorProfileSchema from '../schemas/CreatorProfile.model';
+import CreatorServiceSchema from '../schemas/CreatorService.model';
+import InquirySchema from '../schemas/Inquiry.model';
+import InquiryEventSchema from '../schemas/InquiryEvent.model';
+import InquiryMessageSchema from '../schemas/InquiryMessage.model';
+import NotificationSchema from '../schemas/Notification.model';
+import PortfolioProjectSchema from '../schemas/PortfolioProject.model';
+import ProjectCommentSchema from '../schemas/ProjectComment.model';
+import ProjectLikeSchema from '../schemas/ProjectLike.model';
+import SavedProjectSchema from '../schemas/SavedProject.model';
+import UserSchema from '../schemas/User.model';
 
 export const modelDefinitions = [
+	{ name: 'SiteContent', schema: SiteContentSchema },
+	{ name: 'CreativeEvent', schema: CreativeEventSchema },
 	{ name: 'ActivityEvent', schema: ActivityEventSchema },
 	{ name: 'CreatorFollow', schema: CreatorFollowSchema },
 	{ name: 'AuthIdentity', schema: AuthIdentitySchema },

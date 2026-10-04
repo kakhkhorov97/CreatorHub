@@ -1,10 +1,15 @@
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { UserRole } from '../../libs/enums/user-role.enum';
 import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { Category } from '../../libs/dto/category/category';
-import { CategoryInput, UpdateCategoryInput } from '../../libs/dto/category/category.input';
+import { CategoryInput } from '../../libs/dto/category/category.input';
+import { UpdateCategoryInput } from '../../libs/dto/category/category.update';
 import { User } from '../../libs/dto/user/user';
-import { requireAdmin } from '../../libs/utils/policy';
-import { CurrentUser, AuthGuard } from '../auth/guards/auth.guard';
+import { requireAdmin } from '../../libs/helpers/policy';
+import { AuthGuard } from '../auth/guards/auth.guard';
+import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { CategoriesService } from './category.service';
 
 @Resolver()
@@ -16,23 +21,26 @@ export class CategoriesResolver {
 		return this.categoriesService.list();
 	}
 
-	@UseGuards(AuthGuard)
+	@Roles(UserRole.ADMIN)
+	@UseGuards(AuthGuard, RolesGuard)
 	@Query(() => [Category])
-	adminCategories(@CurrentUser() currentUser: User) {
+	adminCategories(@AuthMember() currentUser: User) {
 		requireAdmin(currentUser);
 		return this.categoriesService.list(true);
 	}
 
-	@UseGuards(AuthGuard)
+	@Roles(UserRole.ADMIN)
+	@UseGuards(AuthGuard, RolesGuard)
 	@Mutation(() => Category)
-	createCategory(@CurrentUser() currentUser: User, @Args('input') input: CategoryInput) {
+	createCategory(@AuthMember() currentUser: User, @Args('input') input: CategoryInput) {
 		return this.categoriesService.create(currentUser, input);
 	}
 
-	@UseGuards(AuthGuard)
+	@Roles(UserRole.ADMIN)
+	@UseGuards(AuthGuard, RolesGuard)
 	@Mutation(() => Category)
 	updateCategory(
-		@CurrentUser() currentUser: User,
+		@AuthMember() currentUser: User,
 		@Args('id', { type: () => ID }) id: string,
 		@Args('input') input: UpdateCategoryInput,
 	) {

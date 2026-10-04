@@ -1,4 +1,4 @@
-import { Field, ID, InputType, Int, PartialType } from '@nestjs/graphql';
+import { Field, ID, InputType, Int } from '@nestjs/graphql';
 import { Transform } from 'class-transformer';
 import {
 	ArrayMaxSize,
@@ -13,7 +13,7 @@ import {
 	Min,
 	ValidateIf,
 } from 'class-validator';
-import { PricingType } from '../../enums/creatorhub.enum';
+import { PricingType } from '../../enums/pricing-type.enum';
 
 @InputType()
 export class CreateServiceInput {
@@ -66,6 +66,3 @@ export class CreateServiceInput {
 	@Length(1, 200, { each: true })
 	deliverables?: string[];
 }
-
-@InputType()
-export class UpdateServiceInput extends PartialType(CreateServiceInput, { skipNullProperties: false }) {}

@@ -1,13 +1,17 @@
+import { ProjectSort } from '../../libs/enums/project-sort.enum';
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage } from 'mongoose';
 import { CITIES } from '../../libs/dto/common/locations';
-import { CreatorProfile } from '../../libs/dto/creator/creator-profile';
+import { CreatorProfile, Creators } from '../../libs/dto/creator/creator-profile';
 import { DiscoveryInput } from '../../libs/dto/discovery/discovery.input';
-import { PortfolioProject } from '../../libs/dto/project/portfolio-project';
-import { CreatorService } from '../../libs/dto/service/creator-service';
-import { PricingType, ProfileStatus, ProjectStatus, ServiceStatus } from '../../libs/enums/creatorhub.enum';
-import { check, objectId, page } from '../../libs/utils/policy';
+import { PortfolioProject, Projects } from '../../libs/dto/project/portfolio-project';
+import { CreatorService, Services } from '../../libs/dto/service/creator-service';
+import { PricingType } from '../../libs/enums/pricing-type.enum';
+import { ProfileStatus } from '../../libs/enums/profile-status.enum';
+import { ProjectStatus } from '../../libs/enums/project-status.enum';
+import { ServiceStatus } from '../../libs/enums/service-status.enum';
+import { check, shapeIntoMongooseObjectId, page } from '../../libs/helpers/policy';
 import { CategoriesService } from '../category/category.service';
 import { VisibilityService } from '../creator/visibility.service';
 
@@ -51,7 +55,7 @@ export class DiscoveryService {
 					status: ProfileStatus.PUBLISHED,
 					deletedAt: { $exists: false },
 					...this.creatorFilters(input),
-					...(input.categoryId ? { categoryIds: objectId(input.categoryId) } : {}),
+					...(input.categoryId ? { categoryIds: shapeIntoMongooseObjectId(input.categoryId) } : {}),
 					...this.text(input, ['headline', 'bio', 'skills']),
 				},
 			},
@@ -81,45 +85,70 @@ export class DiscoveryService {
 			);
 		pipeline.push(
 			{ $sort: { publishedAt: -1, _id: -1 } },
-			{ $skip: offset },
-			{ $limit: limit },
-			{ $unset: ['_owner', '_offers'] },
+			{
+				$facet: {
+					list: [{ $skip: offset }, { $limit: limit }, { $unset: ['_owner', '_offers'] }],
+					metaCounter: [{ $count: 'total' }],
+				},
+			},
 		);
-		return this.profileModel.aggregate<CreatorProfile>(pipeline);
+		const [result] = await this.profileModel.aggregate<Creators>(pipeline);
+		return result;
 	}
 
 	public async getProjects(input: DiscoveryInput) {
 		await this.validate(input);
 		const { offset, limit } = page(input);
-		return this.projectModel.aggregate<PortfolioProject>([
+		const [result] = await this.projectModel.aggregate<Projects>([
 			{
 				$match: {
 					status: ProjectStatus.PUBLISHED,
+					...(input.excludeProjectIds?.length
+						? { _id: { $nin: input.excludeProjectIds.map(shapeIntoMongooseObjectId) } }
+						: {}),
 					deletedAt: { $exists: false },
-					...(input.categoryId ? { categoryId: objectId(input.categoryId) } : {}),
-					...(input.creatorId ? { creatorId: objectId(input.creatorId) } : {}),
+					...(input.categoryId ? { categoryId: shapeIntoMongooseObjectId(input.categoryId) } : {}),
+					...(input.creatorId ? { creatorId: shapeIntoMongooseObjectId(input.creatorId) } : {}),
 					...this.text(input, ['title', 'summary', 'tags']),
 				},
 			},
 			...VisibilityService.ownerPipeline('creatorId'),
 			{ $match: this.creatorFilters(input, '_creator.') },
-			{ $sort: { publishedAt: -1, _id: -1 } },
-			{ $skip: offset },
-			{ $limit: limit },
-			{ $unset: ['_owner', '_creator'] },
+			...(input.sort === ProjectSort.POPULAR
+				? ([
+						{
+							$lookup: {
+								from: 'projectLikes',
+								localField: '_id',
+								foreignField: 'projectId',
+								as: '_likes',
+								pipeline: [{ $count: 'total' }],
+							},
+						},
+						{ $set: { _likeCount: { $ifNull: [{ $arrayElemAt: ['$_likes.total', 0] }, 0] } } },
+						{ $sort: { _likeCount: -1, publishedAt: -1, _id: -1 } },
+					] as PipelineStage[])
+				: [{ $sort: { publishedAt: -1, _id: -1 } } as PipelineStage]),
+			{
+				$facet: {
+					list: [{ $skip: offset }, { $limit: limit }, { $unset: ['_owner', '_creator', '_likes', '_likeCount'] }],
+					metaCounter: [{ $count: 'total' }],
+				},
+			},
 		]);
+		return result;
 	}
 
 	public async getServices(input: DiscoveryInput) {
 		await this.validate(input);
 		const { offset, limit } = page(input);
-		return this.serviceModel.aggregate<CreatorService>([
+		const [result] = await this.serviceModel.aggregate<Services>([
 			{
 				$match: {
 					status: ServiceStatus.ACTIVE,
 					deletedAt: { $exists: false },
-					...(input.categoryId ? { categoryId: objectId(input.categoryId) } : {}),
-					...(input.creatorId ? { creatorId: objectId(input.creatorId) } : {}),
+					...(input.categoryId ? { categoryId: shapeIntoMongooseObjectId(input.categoryId) } : {}),
+					...(input.creatorId ? { creatorId: shapeIntoMongooseObjectId(input.creatorId) } : {}),
 					...this.text(input, ['title', 'description']),
 				},
 			},
@@ -135,9 +164,13 @@ export class DiscoveryService {
 			...VisibilityService.ownerPipeline('creatorId'),
 			{ $match: this.creatorFilters(input, '_creator.') },
 			{ $sort: { createdAt: -1, _id: -1 } },
-			{ $skip: offset },
-			{ $limit: limit },
-			{ $unset: ['_owner', '_creator'] },
+			{
+				$facet: {
+					list: [{ $skip: offset }, { $limit: limit }, { $unset: ['_owner', '_creator'] }],
+					metaCounter: [{ $count: 'total' }],
+				},
+			},
 		]);
+		return result;
 	}
 }

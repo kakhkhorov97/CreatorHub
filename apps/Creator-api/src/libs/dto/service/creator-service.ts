@@ -1,6 +1,9 @@
+import { MetaCounter } from '../common/meta-counter';
 import { Field, ID, Int, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
-import { Currency, PricingType, ServiceStatus } from '../../enums/creatorhub.enum';
+import { Currency } from '../../enums/currency.enum';
+import { PricingType } from '../../enums/pricing-type.enum';
+import { ServiceStatus } from '../../enums/service-status.enum';
 import { MutableEntity } from '../common/entity';
 
 @ObjectType()
@@ -37,4 +40,13 @@ export class CreatorService extends MutableEntity {
 
 	@Field(() => Date, { nullable: true })
 	deletedAt?: Date;
+}
+
+@ObjectType()
+export class Services {
+	@Field(() => [CreatorService])
+	list!: CreatorService[];
+
+	@Field(() => [MetaCounter])
+	metaCounter!: MetaCounter[];
 }

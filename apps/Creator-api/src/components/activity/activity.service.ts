@@ -1,29 +1,28 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { ActivityEvent } from '../../libs/dto/notification/activity-event';
-import { CreatorFollow } from '../../libs/dto/engagement/creator-follow';
+import { CreatorFollow } from '../../libs/dto/follow/creator-follow';
 import { CreatorProfile } from '../../libs/dto/creator/creator-profile';
 import { PortfolioProject } from '../../libs/dto/project/portfolio-project';
-import { ProjectComment } from '../../libs/dto/engagement/project-comment';
-import { ProjectLike } from '../../libs/dto/engagement/project-like';
+import { ProjectComment } from '../../libs/dto/comment/project-comment';
+import { ProjectLike } from '../../libs/dto/like/project-like';
 import { Notification } from '../../libs/dto/notification/notification';
 import { User } from '../../libs/dto/user/user';
-import {
-	ActivityDeliveryStatus,
-	ActivityEventType,
-	CommentStatus,
-	ProfileStatus,
-	ProjectStatus,
-	UserStatus,
-} from '../../libs/enums/creatorhub.enum';
+import { ActivityDeliveryStatus } from '../../libs/enums/activity-delivery-status.enum';
+import { ActivityEventType } from '../../libs/enums/activity-event-type.enum';
+import { CommentStatus } from '../../libs/enums/comment-status.enum';
+import { ProfileStatus } from '../../libs/enums/profile-status.enum';
+import { ProjectStatus } from '../../libs/enums/project-status.enum';
+import { UserStatus } from '../../libs/enums/user-status.enum';
 
 @Injectable()
-export class ActivityService implements OnModuleInit, OnModuleDestroy {
+export class ActivityService {
 	private readonly logger = new Logger(ActivityService.name);
-	private timer?: NodeJS.Timeout;
+
 	private running = false;
+
 	constructor(
 		@InjectConnection() private readonly connection: Connection,
 		@InjectModel('ProjectLike') private readonly likes: Model<ProjectLike>,
@@ -35,17 +34,6 @@ export class ActivityService implements OnModuleInit, OnModuleDestroy {
 		@InjectModel('Notification') private readonly notifications: Model<Notification>,
 		@InjectModel('User') private readonly users: Model<User>,
 	) {}
-
-	public onModuleInit() {
-		if (process.env.NODE_ENV === 'test') return;
-		this.timer = setInterval(() => {
-			void this.deliverPending().catch(() => this.logger.error('Activity delivery failed; pending events will retry'));
-		}, 5000);
-		this.timer.unref();
-	}
-	public onModuleDestroy() {
-		if (this.timer) clearInterval(this.timer);
-	}
 
 	public async record(
 		input: {

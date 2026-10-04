@@ -1,4 +1,4 @@
-import { Field, InputType, Int, PartialType } from '@nestjs/graphql';
+import { Field, InputType, Int } from '@nestjs/graphql';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsInt, IsString, Length, Matches, Max, Min, ValidateIf } from 'class-validator';
 
@@ -36,6 +36,3 @@ export class CategoryInput {
 	@IsBoolean()
 	isActive?: boolean;
 }
-
-@InputType()
-export class UpdateCategoryInput extends PartialType(CategoryInput, { skipNullProperties: false }) {}

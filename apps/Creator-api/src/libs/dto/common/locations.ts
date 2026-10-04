@@ -11,8 +11,17 @@ export class City {
 	@Field()
 	nameKo!: string;
 }
-// Launch cities. Keys are stable; this is deliberately not a database enum.
+// Supported cities. Keys are stable; this is deliberately not a database enum.
+
 export const CITIES: City[] = [
+	{ key: 'london', nameEn: 'London, United Kingdom', nameKo: '런던, 영국' },
+	{ key: 'lisbon', nameEn: 'Lisbon, Portugal', nameKo: '리스본, 포르투갈' },
+	{ key: 'copenhagen', nameEn: 'Copenhagen, Denmark', nameKo: '코펜하겐, 덴마크' },
+	{ key: 'tokyo', nameEn: 'Tokyo, Japan', nameKo: '도쿄, 일본' },
+	{ key: 'berlin', nameEn: 'Berlin, Germany', nameKo: '베를린, 독일' },
+	{ key: 'new-york', nameEn: 'New York, United States', nameKo: '뉴욕, 미국' },
+	{ key: 'sydney', nameEn: 'Sydney, Australia', nameKo: '시드니, 호주' },
+
 	{ key: 'seoul', nameEn: 'Seoul', nameKo: '서울' },
 	{ key: 'busan', nameEn: 'Busan', nameKo: '부산' },
 	{ key: 'incheon', nameEn: 'Incheon', nameKo: '인천' },

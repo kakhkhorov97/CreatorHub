@@ -1,13 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Message } from '../../libs/enums/common.enum';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import { CITIES } from '../../libs/dto/common/locations';
 import { CreatorProfile } from '../../libs/dto/creator/creator-profile';
-import { CreateCreatorInput, UpdateCreatorInput } from '../../libs/dto/creator/creator.input';
+import { CreateCreatorInput } from '../../libs/dto/creator/creator.input';
+import { UpdateCreatorInput } from '../../libs/dto/creator/creator.update';
 import { User } from '../../libs/dto/user/user';
-import { ProfileStatus, UserRole, UserStatus } from '../../libs/enums/creatorhub.enum';
-import { check, defined, requireRecord, requireActive } from '../../libs/utils/policy';
-import { saveRevision } from '../../libs/utils/save-revision';
+import { ProfileStatus } from '../../libs/enums/profile-status.enum';
+import { UserRole } from '../../libs/enums/user-role.enum';
+import { UserStatus } from '../../libs/enums/user-status.enum';
+import { check, duplicateKey, defined, requireRecord, requireActive } from '../../libs/helpers/policy';
+import { saveRevision } from '../../libs/helpers/save-revision';
 import { CategoriesService } from '../category/category.service';
 import { VisibilityService } from './visibility.service';
 
@@ -36,8 +40,22 @@ export class CreatorsService {
 
 	async create(currentUser: User, input: CreateCreatorInput) {
 		requireActive(currentUser);
+		const existing = await this.profiles.findOne({ userId: currentUser._id });
+		if (existing) return this.onboardingProfile(existing);
 		await this.validate(input);
-		return this.profiles.create({ ...defined(input), userId: currentUser._id });
+		try {
+			return await this.profiles.create({ ...defined(input), userId: currentUser._id });
+		} catch (error) {
+			if (!duplicateKey(error)) throw error;
+			const existing = await this.profiles.findOne({ userId: currentUser._id });
+			if (!existing) throw error;
+			return this.onboardingProfile(existing);
+		}
+	}
+
+	private onboardingProfile(profile: CreatorProfile) {
+		if (profile.deletedAt) throw new ConflictException(Message.PROFILE_DELETED);
+		return profile;
 	}
 
 	async update(currentUser: User, input: UpdateCreatorInput) {

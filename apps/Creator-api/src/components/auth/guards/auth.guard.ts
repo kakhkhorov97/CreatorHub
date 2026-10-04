@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, createParamDecorator } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { Request } from 'express';
 import { User } from '../../../libs/dto/user/user';
@@ -8,6 +8,7 @@ export interface AuthRequest extends Request {
 	user: User;
 	sessionId: string;
 }
+
 export interface GraphqlContext {
 	req: AuthRequest;
 }
@@ -25,11 +26,3 @@ export class AuthGuard implements CanActivate {
 		return true;
 	}
 }
-export const CurrentUser = createParamDecorator(
-	(_data: unknown, context: ExecutionContext) =>
-		GqlExecutionContext.create(context).getContext<GraphqlContext>().req.user,
-);
-export const SessionId = createParamDecorator(
-	(_data: unknown, context: ExecutionContext) =>
-		GqlExecutionContext.create(context).getContext<GraphqlContext>().req.sessionId,
-);

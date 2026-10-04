@@ -1,6 +1,6 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
-import { AuthTokenPurpose } from '../../enums/creatorhub.enum';
+import { AuthTokenPurpose } from '../../enums/auth-token-purpose.enum';
 import { Entity } from '../common/entity';
 
 @ObjectType()

@@ -1,19 +1,7 @@
 import { Field, ID, InputType, Int } from '@nestjs/graphql';
 import { Transform } from 'class-transformer';
-import {
-	IsBoolean,
-	IsDate,
-	IsEnum,
-	IsInt,
-	IsMongoId,
-	IsString,
-	IsUUID,
-	Length,
-	Max,
-	Min,
-	ValidateIf,
-} from 'class-validator';
-import { InquiryOutcome } from '../../enums/creatorhub.enum';
+import { IsDate, IsEnum, IsInt, IsMongoId, IsString, IsUUID, Length, Max, Min, ValidateIf } from 'class-validator';
+import { InquiryOutcome } from '../../enums/inquiry-outcome.enum';
 
 @InputType()
 export class DraftFieldsInput {
@@ -115,21 +103,4 @@ export class CreateInquiryInput extends DraftFieldsInput {
 	@Field(() => ID)
 	@IsMongoId()
 	creatorId!: string;
-}
-
-@InputType()
-export class UpdateInquiryInput extends DraftFieldsInput {
-	@Field(() => ID)
-	@IsMongoId()
-	inquiryId!: string;
-
-	@Field(() => Int)
-	@IsInt()
-	@Min(0)
-	expectedVersion!: number;
-
-	@Field({ nullable: true })
-	@ValidateIf((_o, v) => v !== undefined)
-	@IsBoolean()
-	clearService?: boolean;
 }
