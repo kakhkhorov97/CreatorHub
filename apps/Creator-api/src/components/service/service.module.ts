@@ -1,3 +1,4 @@
+import { ReviewModule } from '../review/review.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import CreatorServiceSchema from '../../schemas/CreatorService.model';
@@ -9,6 +10,7 @@ import { ServiceService } from './service.service';
 
 @Module({
 	imports: [
+		ReviewModule,
 		AuthModule,
 		CreatorModule,
 		CategoryModule,

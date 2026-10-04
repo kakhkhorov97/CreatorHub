@@ -1,3 +1,4 @@
+import { ReviewResolver } from './components/review/review.resolver';
 import { AdminResolver, SiteContentResolver } from './components/admin/admin.resolver';
 import { EventsResolver } from './components/event/event.resolver';
 import { UploadResolver } from './components/upload/upload.resolver';
@@ -14,7 +15,7 @@ import { LikeResolver } from './components/like/like.resolver';
 import { FollowResolver } from './components/follow/follow.resolver';
 import { SaveResolver } from './components/save/save.resolver';
 import { CommentResolver } from './components/comment/comment.resolver';
-import { InquiryResolver } from './components/inquiry/inquiry.resolver';
+import { InquiryResolver, ServiceFeedbackResolver } from './components/inquiry/inquiry.resolver';
 import { NotificationResolver } from './components/notification/notification.resolver';
 import { ProjectResolver } from './components/project/project.resolver';
 import { ServiceResolver } from './components/service/service.resolver';
@@ -25,6 +26,7 @@ async function exportSchema() {
 	try {
 		const factory = app.get(GraphQLSchemaFactory);
 		const schema = await factory.create([
+			ReviewResolver,
 			AdminResolver,
 			SiteContentResolver,
 			UploadResolver,
@@ -39,6 +41,7 @@ async function exportSchema() {
 			SaveResolver,
 			CommentResolver,
 			InquiryResolver,
+			ServiceFeedbackResolver,
 			NotificationResolver,
 			ProjectResolver,
 			ServiceResolver,

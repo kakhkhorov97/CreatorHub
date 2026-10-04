@@ -22,7 +22,7 @@ The API defaults to `http://localhost:7001/graphql`. `GET /` returns `CreatorHub
 
 ## Accounts and administrator access
 
-Register with email or phone number, password, and display name. Passwords must be 12–128 characters. Email accounts must confirm their email before protected actions. Phone accounts use a unique international phone number and password, with no SMS or ownership confirmation. Google, Telegram, and Kakao use verified provider ID tokens. Each account starts as USER; publishing its first valid creator profile atomically promotes it to CREATOR. ADMIN keeps its role. The creator profile extends the same account.
+Register with email or phone number, password, and display name. Passwords must be 6–30 characters. Email accounts must confirm their email before protected actions. Phone accounts use a unique international phone number and password, with no SMS or ownership confirmation. Google, Telegram, and Kakao use verified provider ID tokens. Each account starts as USER; publishing its first valid creator profile atomically promotes it to CREATOR. ADMIN keeps its role. The creator profile extends the same account.
 
 Development verification and reset emails are saved as private files in `.local/mail/`. Open the newest matching file, copy the `token` query parameter from `actionUrl`, and call `verifyEmail(token: ...)` in GraphQL. The frontend verification pages will be implemented separately.
 
@@ -106,3 +106,11 @@ The batch app runs notification delivery on port 3002. Keep it running alongside
 This is an adaptation of a Nestar starter. CreatorHub-specific work includes the 17-collection domain design, separate portfolios and services, revocable authentication, participant-only inquiries, immutable request snapshots, transaction-backed events, and acceptance tests. The starter's property, agent, board, view-counter, and ranking logic has been removed.
 
 The review, verification evidence, and deployment limitations are in [docs/BACKEND_REVIEW.md](docs/BACKEND_REVIEW.md). Project memory is maintained in [docs/WORK_LOG.md](docs/WORK_LOG.md).
+
+## October inquiry and review update
+
+The website sends new inquiries directly with `sendInquiry`. Creation, submission and notification share one transaction. A customer request UUID makes retries return the same inquiry. Existing draft APIs remain for retained drafts and compatibility.
+
+Only the original customer can mark an agreed, closed inquiry completed with `completeInquiry`, then submit one 1–5 rating and written review through `createServiceFeedback`. Public `getCreatorFeedback` requires a visible Korea-based creator; private `getInquiryFeedback` requires an inquiry participant. The same account retains its ID and credentials when becoming a creator.
+
+New passwords are 6–30 characters. Existing bcrypt and scrypt passwords still verify. Passwords exceeding bcrypt's byte limit use a versioned SHA-256 prehash to preserve every character.

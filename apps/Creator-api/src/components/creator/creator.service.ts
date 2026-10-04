@@ -1,3 +1,4 @@
+import { ReviewService } from '../review/review.service';
 import { Message } from '../../libs/enums/common.enum';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -8,8 +9,6 @@ import { CreateCreatorInput } from '../../libs/dto/creator/creator.input';
 import { UpdateCreatorInput } from '../../libs/dto/creator/creator.update';
 import { User } from '../../libs/dto/user/user';
 import { ProfileStatus } from '../../libs/enums/profile-status.enum';
-import { UserRole } from '../../libs/enums/user-role.enum';
-import { UserStatus } from '../../libs/enums/user-status.enum';
 import { check, duplicateKey, defined, requireRecord, requireActive } from '../../libs/helpers/policy';
 import { saveRevision } from '../../libs/helpers/save-revision';
 import { CategoriesService } from '../category/category.service';
@@ -18,6 +17,7 @@ import { VisibilityService } from './visibility.service';
 @Injectable()
 export class CreatorsService {
 	constructor(
+		private readonly reviews: ReviewService,
 		@InjectConnection() private readonly connection: Connection,
 		@InjectModel(CreatorProfile.name) private readonly profiles: Model<CreatorProfile>,
 		@InjectModel(User.name) private readonly users: Model<User>,
@@ -61,9 +61,13 @@ export class CreatorsService {
 	async update(currentUser: User, input: UpdateCreatorInput) {
 		requireActive(currentUser);
 		const profile = await this.own(currentUser);
+		const original = this.profiles.hydrate(profile.toObject());
 		Object.assign(profile, defined(input));
 		await this.validate(profile);
-		if (profile.status === ProfileStatus.PUBLISHED) await this.publication(profile);
+		if (profile.status === ProfileStatus.PUBLISHED) {
+			await this.publication(profile);
+			return this.reviews.submit(currentUser, 'PROFILE', original, profile);
+		}
 		return saveRevision(this.profiles, profile);
 	}
 
@@ -103,23 +107,10 @@ export class CreatorsService {
 			);
 			if (status === ProfileStatus.PUBLISHED) {
 				await this.publication(profile);
-				profile.publishedAt ??= new Date();
+				return this.reviews.submit(currentUser, 'PROFILE', profile, profile);
 			}
 			profile.status = status;
 			const updated = await saveRevision(this.profiles, profile, session);
-			if (status === ProfileStatus.PUBLISHED) {
-				const account = await this.users.updateOne(
-					{ _id: currentUser._id, status: UserStatus.ACTIVE },
-					{ $currentDate: { updatedAt: true } },
-					{ session },
-				);
-				check(account.matchedCount, 'Account unavailable');
-				await this.users.updateOne(
-					{ _id: currentUser._id, role: UserRole.USER },
-					{ $set: { role: UserRole.CREATOR } },
-					{ session },
-				);
-			}
 			return updated;
 		});
 	}

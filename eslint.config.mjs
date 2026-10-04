@@ -15,6 +15,7 @@ export default [
 			...prettier.rules,
 			'no-undef': 'off',
 			'no-unused-vars': 'off',
+			'@typescript-eslint/lines-between-class-members': ['error', 'always'],
 			'@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
 		},
 	},

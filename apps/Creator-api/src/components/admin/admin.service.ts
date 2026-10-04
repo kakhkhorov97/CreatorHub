@@ -39,6 +39,7 @@ import { CategoriesService } from '../category/category.service';
 import { AuthService } from '../auth/auth.service';
 import { ActivityService } from '../activity/activity.service';
 import { VisibilityService } from '../creator/visibility.service';
+
 @Injectable()
 export class AdminService {
 	constructor(
@@ -55,10 +56,12 @@ export class AdminService {
 		private readonly activity: ActivityService,
 		private readonly visibility: VisibilityService,
 	) {}
+
 	private authorize(user: User) {
 		requireActive(user);
 		requireAdmin(user);
 	}
+
 	private model(kind: AdminKind) {
 		const names = {
 			USERS: 'User',
@@ -69,6 +72,7 @@ export class AdminService {
 		};
 		return this.connection.model(names[kind]);
 	}
+
 	async directory(user: User, kind: AdminKind, input: AdminDirectoryInput) {
 		this.authorize(user);
 		const statuses = {
@@ -136,6 +140,7 @@ export class AdminService {
 		);
 		return { list, metaCounter: [{ total }] };
 	}
+
 	async overview(user: User) {
 		this.authorize(user);
 		const names = {
@@ -156,9 +161,11 @@ export class AdminService {
 			),
 		);
 	}
+
 	async siteContent() {
 		return { ...siteDefaults, ...(await this.content.findOne({ key: 'public' }).lean()) };
 	}
+
 	async updateSiteContent(user: User, input: SiteContentInput) {
 		this.authorize(user);
 		check(
@@ -171,6 +178,7 @@ export class AdminService {
 			{ upsert: true, new: true, runValidators: true },
 		);
 	}
+
 	// Serialize administrator account edits against the acting administrator's live role.
 	private async lockAdmin(user: User, session: ClientSession) {
 		const result = await this.users.updateOne(
@@ -180,6 +188,7 @@ export class AdminService {
 		);
 		check(result.matchedCount, 'Administrator account unavailable');
 	}
+
 	async updateUser(user: User, id: string, input: AdminUserUpdateInput) {
 		this.authorize(user);
 		check(
@@ -195,6 +204,7 @@ export class AdminService {
 			return saveRevision(this.users, target, session);
 		});
 	}
+
 	async userStatus(user: User, id: string, status: UserStatus) {
 		this.authorize(user);
 		check(!sameId(user._id, id), 'You cannot change your own account status');
@@ -208,6 +218,7 @@ export class AdminService {
 			return saved;
 		});
 	}
+
 	async updateCreator(user: User, id: string, input: UpdateCreatorInput, status?: ProfileStatus) {
 		this.authorize(user);
 		return this.connection.transaction(async (session) => {
@@ -255,6 +266,7 @@ export class AdminService {
 			return saveRevision(this.creators, target, session);
 		});
 	}
+
 	private async validateProject(target: PortfolioProject, original?: PortfolioProject) {
 		const creator = requireRecord(await this.creators.findById(target.creatorId));
 		if (target.categoryId) await this.categories.validate([target.categoryId], false);
@@ -278,6 +290,7 @@ export class AdminService {
 			await this.visibility.profile(target.creatorId);
 		}
 	}
+
 	async createProject(user: User, creatorId: string, input: CreateProjectInput) {
 		this.authorize(user);
 		const creator = requireRecord(
@@ -287,6 +300,7 @@ export class AdminService {
 		await this.validateProject(target);
 		return target.save();
 	}
+
 	async updateProject(user: User, id: string, input: AdminProjectUpdateInput, status?: ProjectStatus) {
 		this.authorize(user);
 		return this.connection.transaction(async (session) => {
@@ -323,6 +337,7 @@ export class AdminService {
 			return saved;
 		});
 	}
+
 	private async validateService(target: CreatorService) {
 		if (target.categoryId) await this.categories.validate([target.categoryId], false);
 		if (target.pricingType === PricingType.STARTING_AT)
@@ -337,6 +352,7 @@ export class AdminService {
 			await this.visibility.profile(target.creatorId);
 		}
 	}
+
 	async createService(user: User, creatorId: string, input: CreateServiceInput) {
 		this.authorize(user);
 		const creator = requireRecord(
@@ -346,6 +362,7 @@ export class AdminService {
 		await this.validateService(target);
 		return target.save();
 	}
+
 	async updateService(user: User, id: string, input: UpdateServiceInput, status?: ServiceStatus) {
 		this.authorize(user);
 		const target = requireRecord(await this.services.findById(shapeIntoMongooseObjectId(id)));
@@ -365,6 +382,7 @@ export class AdminService {
 		await this.validateService(target);
 		return saveRevision(this.services, target);
 	}
+
 	async removed(user: User, kind: AdminKind, id: string, removed: boolean) {
 		this.authorize(user);
 		check(

@@ -9,6 +9,8 @@ import { InquiryServiceSnapshot } from '../common/inquiry-service-snapshot';
 
 @ObjectType()
 export class Inquiry extends MutableEntity {
+	clientRequestKey?: string;
+
 	@Field(() => ID)
 	clientId!: Types.ObjectId;
 

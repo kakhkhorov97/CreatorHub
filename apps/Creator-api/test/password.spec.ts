@@ -17,8 +17,11 @@ describe('Password compatibility', () => {
 		expect(hash).toMatch(/^\$2[ab]\$12\$/);
 		expect(await auth.comparePasswords(password, hash)).toBe(true);
 	});
-	it('rejects overlong UTF-8 passwords without truncation', async () => {
-		await expect(auth.hashPassword('한'.repeat(25))).rejects.toThrow('72 UTF-8 bytes');
+	it('accepts 30-character Unicode passwords without bcrypt truncation', async () => {
+		const unicode = '한'.repeat(30);
+		const hash = await auth.hashPassword(unicode);
+		expect(await auth.comparePasswords(unicode, hash)).toBe(true);
+		expect(await auth.comparePasswords('한'.repeat(29) + '글', hash)).toBe(false);
 		expect(
 			await auth.comparePasswords('한'.repeat(25), '$2b$12$7/0tvqV1smdYFNsU4wkRFuTvsPH3d5xtjvt6SRj2a0OSV/JdlReJu'),
 		).toBe(false);

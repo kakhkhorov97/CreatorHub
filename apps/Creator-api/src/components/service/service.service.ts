@@ -1,3 +1,4 @@
+import { ReviewService } from '../review/review.service';
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
@@ -24,6 +25,7 @@ import { VisibilityService } from '../creator/visibility.service';
 @Injectable()
 export class ServiceService {
 	constructor(
+		private readonly reviews: ReviewService,
 		@InjectModel('CreatorService') private readonly serviceModel: Model<CreatorService>,
 		private readonly creators: CreatorsService,
 		private readonly categories: CategoriesService,
@@ -98,10 +100,12 @@ export class ServiceService {
 
 	public async updateService(currentUser: User, id: string, input: UpdateServiceInput) {
 		const service = await this.owned(currentUser, id);
+		const original = this.serviceModel.hydrate(service.toObject());
 		Object.assign(service, defined(input));
 		if (input.pricingType === PricingType.CUSTOM_QUOTE && input.startingPrice === undefined)
 			service.startingPrice = undefined;
 		await this.validate(service);
+		if (service.status === ServiceStatus.ACTIVE) return this.reviews.submit(currentUser, 'SERVICE', original, service);
 		return saveRevision(this.serviceModel, service);
 	}
 
@@ -114,8 +118,10 @@ export class ServiceService {
 			ARCHIVED: [ServiceStatus.ARCHIVED, ServiceStatus.ACTIVE],
 		};
 		check(transitions[service.status].includes(status), 'Invalid service status transition');
+		const original = this.serviceModel.hydrate(service.toObject());
 		service.status = status;
 		await this.validate(service);
+		if (service.status === ServiceStatus.ACTIVE) return this.reviews.submit(currentUser, 'SERVICE', original, service);
 		return saveRevision(this.serviceModel, service);
 	}
 

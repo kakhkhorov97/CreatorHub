@@ -23,15 +23,18 @@ import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AdminService } from './admin.service';
+
 @Resolver()
 @Roles(UserRole.ADMIN)
 @UseGuards(AuthGuard, RolesGuard)
 export class AdminResolver {
 	constructor(private readonly admin: AdminService) {}
+
 	@Query(() => AdminOverview)
 	adminOverview(@AuthMember() user: User) {
 		return this.admin.overview(user);
 	}
+
 	@Query(() => AdminDirectory)
 	adminDirectory(
 		@AuthMember() user: User,
@@ -40,6 +43,7 @@ export class AdminResolver {
 	) {
 		return this.admin.directory(user, kind, input);
 	}
+
 	@Mutation(() => User)
 	adminUpdateUser(
 		@AuthMember() user: User,
@@ -48,6 +52,7 @@ export class AdminResolver {
 	) {
 		return this.admin.updateUser(user, id, input);
 	}
+
 	@Mutation(() => User)
 	adminSetUserStatus(
 		@AuthMember() user: User,
@@ -56,6 +61,7 @@ export class AdminResolver {
 	) {
 		return this.admin.userStatus(user, id, status);
 	}
+
 	@Mutation(() => CreatorProfile)
 	adminUpdateCreator(
 		@AuthMember() user: User,
@@ -65,6 +71,7 @@ export class AdminResolver {
 	) {
 		return this.admin.updateCreator(user, id, input, status);
 	}
+
 	@Mutation(() => PortfolioProject)
 	adminCreateProject(
 		@AuthMember() user: User,
@@ -73,6 +80,7 @@ export class AdminResolver {
 	) {
 		return this.admin.createProject(user, creatorId, input);
 	}
+
 	@Mutation(() => PortfolioProject)
 	adminUpdateProject(
 		@AuthMember() user: User,
@@ -82,6 +90,7 @@ export class AdminResolver {
 	) {
 		return this.admin.updateProject(user, id, input, status);
 	}
+
 	@Mutation(() => CreatorService)
 	adminCreateService(
 		@AuthMember() user: User,
@@ -90,6 +99,7 @@ export class AdminResolver {
 	) {
 		return this.admin.createService(user, creatorId, input);
 	}
+
 	@Mutation(() => CreatorService)
 	adminUpdateService(
 		@AuthMember() user: User,
@@ -99,6 +109,7 @@ export class AdminResolver {
 	) {
 		return this.admin.updateService(user, id, input, status);
 	}
+
 	@Mutation(() => Boolean)
 	adminSetRemoved(
 		@AuthMember() user: User,
@@ -108,14 +119,17 @@ export class AdminResolver {
 	) {
 		return this.admin.removed(user, kind, id, removed);
 	}
+
 	@Mutation(() => SiteContent)
 	adminUpdateSiteContent(@AuthMember() user: User, @Args('input') input: SiteContentInput) {
 		return this.admin.updateSiteContent(user, input);
 	}
 }
+
 @Resolver()
 export class SiteContentResolver {
 	constructor(private readonly admin: AdminService) {}
+
 	@Query(() => SiteContent)
 	getSiteContent() {
 		return this.admin.siteContent();

@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
@@ -48,13 +49,22 @@ export class AuthService {
 
 	public async hashPassword(password: string): Promise<string> {
 		if (Buffer.byteLength(password, 'utf8') > 72) {
-			throw new BadRequestException('Password must be at most 72 UTF-8 bytes');
+			return (
+				'bcrypt-sha256:' +
+				(await bcrypt.hash(createHash('sha256').update(password, 'utf8').digest('hex'), BCRYPT_ROUNDS))
+			);
 		}
 
 		return bcrypt.hash(password, BCRYPT_ROUNDS);
 	}
 
 	public async comparePasswords(password: string, stored: string): Promise<boolean> {
+		if (stored.startsWith('bcrypt-sha256:'))
+			return bcrypt.compare(
+				createHash('sha256').update(password, 'utf8').digest('hex'),
+				stored.slice('bcrypt-sha256:'.length),
+			);
+
 		if (/^\$2[ab]\$/.test(stored)) {
 			if (Buffer.byteLength(password, 'utf8') > 72) return false;
 			return bcrypt.compare(password, stored);

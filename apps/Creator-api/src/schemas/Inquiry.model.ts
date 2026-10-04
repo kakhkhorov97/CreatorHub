@@ -6,6 +6,8 @@ import InquiryServiceSnapshotSchema from './InquiryServiceSnapshot.model';
 
 const InquirySchema = new Schema(
 	{
+		clientRequestKey: { type: String, required: false },
+
 		clientId: {
 			type: Schema.Types.ObjectId,
 			required: true,
@@ -124,5 +126,10 @@ const InquirySchema = new Schema(
 InquirySchema.index({ clientId: 1, updatedAt: -1, _id: -1 }, { name: 'ix_inquiries_client' });
 
 InquirySchema.index({ creatorId: 1, status: 1, updatedAt: -1, _id: -1 }, { name: 'ix_inquiries_creator' });
+
+InquirySchema.index(
+	{ clientId: 1, clientRequestKey: 1 },
+	{ unique: true, partialFilterExpression: { clientRequestKey: { $type: 'string' } }, name: 'uq_inquiry_request' },
+);
 
 export default InquirySchema;

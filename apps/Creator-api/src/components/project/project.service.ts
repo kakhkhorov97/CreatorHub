@@ -1,4 +1,4 @@
-import { ActivityService } from '../activity/activity.service';
+import { ReviewService } from '../review/review.service';
 import { Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
@@ -7,7 +7,6 @@ import { PortfolioProject } from '../../libs/dto/project/portfolio-project';
 import { CreateProjectInput } from '../../libs/dto/project/project.input';
 import { UpdateProjectInput } from '../../libs/dto/project/project.update';
 import { User } from '../../libs/dto/user/user';
-import { ActivityEventType } from '../../libs/enums/activity-event-type.enum';
 import { ProjectStatus } from '../../libs/enums/project-status.enum';
 import { MediaPolicy } from '../../libs/helpers/media-policy.service';
 import {
@@ -26,8 +25,8 @@ import { VisibilityService } from '../creator/visibility.service';
 @Injectable()
 export class ProjectService {
 	constructor(
+		private readonly reviews: ReviewService,
 		@InjectConnection() private readonly connection: Connection,
-		private readonly activity: ActivityService,
 		@InjectModel('PortfolioProject') private readonly projectModel: Model<PortfolioProject>,
 		private readonly creators: CreatorsService,
 		private readonly categories: CategoriesService,
@@ -94,15 +93,17 @@ export class ProjectService {
 
 	public async updateProject(currentUser: User, id: string, input: UpdateProjectInput) {
 		const project = await this.owned(currentUser, id);
+		const original = this.projectModel.hydrate(project.toObject());
 		Object.assign(project, defined(input));
 		await this.validate(project, currentUser);
+		if (project.status === ProjectStatus.PUBLISHED)
+			return this.reviews.submit(currentUser, 'PROJECT', original, project);
 		return saveRevision(this.projectModel, project);
 	}
 
 	public async setProjectStatus(currentUser: User, id: string, status: ProjectStatus) {
 		return this.connection.transaction(async (session) => {
 			const project = await this.owned(currentUser, id);
-			const firstPublication = status === ProjectStatus.PUBLISHED && !project.publishedAt;
 			check(
 				status !== ProjectStatus.DRAFT || project.status === ProjectStatus.DRAFT,
 				'Published projects cannot return to draft',
@@ -111,22 +112,11 @@ export class ProjectService {
 				status !== ProjectStatus.ARCHIVED || project.status !== ProjectStatus.DRAFT,
 				'Publish a project before archiving it',
 			);
+			const original = this.projectModel.hydrate(project.toObject());
 			project.status = status;
 			await this.validate(project, currentUser);
-			if (status === ProjectStatus.PUBLISHED) project.publishedAt ??= new Date();
+			if (status === ProjectStatus.PUBLISHED) return this.reviews.submit(currentUser, 'PROJECT', original, project);
 			const updated = await saveRevision(this.projectModel, project, session);
-			if (firstPublication) {
-				await this.visibility.profile(project.creatorId, session);
-				await this.activity.record(
-					{
-						performedById: currentUser._id,
-						creatorId: project.creatorId,
-						projectId: project._id,
-						type: ActivityEventType.PROJECT_PUBLISHED,
-					},
-					session,
-				);
-			}
 			return updated;
 		});
 	}

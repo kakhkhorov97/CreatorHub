@@ -1,3 +1,5 @@
+import ServiceFeedbackSchema from '../schemas/ServiceFeedback.model';
+import ContentReviewSchema from '../schemas/ContentReview.model';
 import SiteContentSchema from '../schemas/SiteContent.model';
 import CreativeEventSchema from '../schemas/CreativeEvent.model';
 import ActivityEventSchema from '../schemas/ActivityEvent.model';
@@ -20,6 +22,8 @@ import SavedProjectSchema from '../schemas/SavedProject.model';
 import UserSchema from '../schemas/User.model';
 
 export const modelDefinitions = [
+	{ name: 'ServiceFeedback', schema: ServiceFeedbackSchema },
+	{ name: 'ContentReview', schema: ContentReviewSchema },
 	{ name: 'SiteContent', schema: SiteContentSchema },
 	{ name: 'CreativeEvent', schema: CreativeEventSchema },
 	{ name: 'ActivityEvent', schema: ActivityEventSchema },

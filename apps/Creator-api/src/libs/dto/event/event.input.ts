@@ -2,6 +2,7 @@ import { Field, InputType, Int } from '@nestjs/graphql';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsDate, IsEnum, IsInt, IsString, Length, Max, Min, ValidateIf } from 'class-validator';
 import { EventStatus } from '../../enums/event-status.enum';
+
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 @InputType()

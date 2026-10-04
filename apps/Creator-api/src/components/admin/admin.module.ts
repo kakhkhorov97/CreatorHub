@@ -8,6 +8,7 @@ import { ActivityModule } from '../activity/activity.module';
 import { MediaPolicy } from '../../libs/helpers/media-policy.service';
 import { AdminService } from './admin.service';
 import { AdminResolver, SiteContentResolver } from './admin.resolver';
+
 @Module({
 	imports: [
 		AuthModule,

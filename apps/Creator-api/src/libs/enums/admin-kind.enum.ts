@@ -1,4 +1,5 @@
 import { registerEnumType } from '@nestjs/graphql';
+
 export enum AdminKind {
 	USERS = 'USERS',
 	CREATORS = 'CREATORS',
@@ -6,4 +7,5 @@ export enum AdminKind {
 	SERVICES = 'SERVICES',
 	COMMENTS = 'COMMENTS',
 }
+
 registerEnumType(AdminKind, { name: 'AdminKind' });

@@ -1,3 +1,4 @@
+import { CITIES } from '../../libs/dto/common/locations';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, PipelineStage, Types } from 'mongoose';
@@ -15,7 +16,12 @@ export class VisibilityService {
 
 	async profile(id: Types.ObjectId, session: ClientSession | null = null) {
 		const profile = await this.profiles
-			.findOne({ _id: id, status: ProfileStatus.PUBLISHED, deletedAt: { $exists: false } })
+			.findOne({
+				_id: id,
+				city: { $in: CITIES.map((city) => city.key) },
+				status: ProfileStatus.PUBLISHED,
+				deletedAt: { $exists: false },
+			})
 			.session(session);
 		if (!profile || !(await this.users.exists({ _id: profile.userId, status: UserStatus.ACTIVE }).session(session)))
 			throw new NotFoundException('Creator not found');
@@ -24,12 +30,18 @@ export class VisibilityService {
 
 	// Apply before pagination so hidden owners never consume a public result slot.
 	static ownerPipeline(profilePath?: string): PipelineStage[] {
-		const stages: PipelineStage[] = [];
+		const stages: PipelineStage[] = profilePath ? [] : [{ $match: { city: { $in: CITIES.map((city) => city.key) } } }];
 		if (profilePath)
 			stages.push(
 				{ $lookup: { from: 'creatorProfiles', localField: profilePath, foreignField: '_id', as: '_creator' } },
 				{ $unwind: '$_creator' },
-				{ $match: { '_creator.status': ProfileStatus.PUBLISHED, '_creator.deletedAt': { $exists: false } } },
+				{
+					$match: {
+						'_creator.city': { $in: CITIES.map((city) => city.key) },
+						'_creator.status': ProfileStatus.PUBLISHED,
+						'_creator.deletedAt': { $exists: false },
+					},
+				},
 			);
 		stages.push(
 			{

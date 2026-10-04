@@ -38,6 +38,21 @@ describe('CreatorHub workflow', () => {
 		expect(body.errors).toBeUndefined();
 		return body.data;
 	}
+	// Existing workflow fixtures explicitly pass through the new admin publication gate.
+	// Moderation behavior itself is exercised in content-review.integration.spec.ts.
+	async function approvedFixture(query: string, variables: Record<string, unknown> = {}, token?: string) {
+		const data = await ok(query, variables, token);
+		const { myContentReviews } = await ok('query{myContentReviews{_id status updatedAt}}', {}, token);
+		for (const review of myContentReviews.filter((item: any) => item.status === 'PENDING')) {
+			await ok(
+				'mutation($id:ID!,$revision:DateTime!){adminDecideContentReview(id:$id,approve:true,revision:$revision){status}}',
+				{ id: review._id, revision: review.updatedAt },
+				admin.accessToken,
+			);
+		}
+		return data;
+	}
+
 	async function account(email: string) {
 		const data = await ok(
 			'mutation($input:RegisterInput!){register(input:$input){accessToken refreshToken user{_id role}}}',
@@ -165,7 +180,7 @@ describe('CreatorHub workflow', () => {
 		expect(identity.passwordHash).toBeUndefined();
 		const privateIdentity = await db.model('AuthIdentity').findById(identity._id).select('+passwordHash');
 		expect(privateIdentity.passwordHash).toMatch(/^\$2[ab]\$12\$/);
-		expect((await db.model('User').findById(phone.user._id).lean())['passwordHash']).toBeUndefined();
+		expect((await db.model('User').findById(phone.user._id).lean())?.['passwordHash']).toBeUndefined();
 		expect(mail.has('+821023456789:EMAIL_VERIFY')).toBe(false);
 		const usersBefore = await db.model('User').countDocuments();
 		expect(
@@ -338,7 +353,7 @@ describe('CreatorHub workflow', () => {
 		expect(
 			(await gql('mutation{setCreatorProfileStatus(status:PUBLISHED){_id}}', {}, creator.accessToken)).errors,
 		).toBeDefined();
-		await ok(
+		await approvedFixture(
 			'mutation($input:UpdateCreatorInput!){updateCreatorProfile(input:$input){_id}}',
 			{
 				input: {
@@ -351,7 +366,11 @@ describe('CreatorHub workflow', () => {
 			},
 			creator.accessToken,
 		);
-		await ok('mutation{setCreatorProfileStatus(status:PUBLISHED){status publishedAt}}', {}, creator.accessToken);
+		await approvedFixture(
+			'mutation{setCreatorProfileStatus(status:PUBLISHED){status publishedAt}}',
+			{},
+			creator.accessToken,
+		);
 		expect((await ok('query{me{role}}', {}, creator.accessToken)).me.role).toBe('CREATOR');
 		const repeated = await ok(
 			'mutation($input:CreateCreatorInput!){createCreatorProfile(input:$input){_id slug}}',
@@ -450,7 +469,7 @@ describe('CreatorHub workflow', () => {
 			).errors,
 		).toBeDefined();
 		const image = `https://media.example.com/creatorhub/${creator.user._id}/bookstore.webp`;
-		await ok(
+		await approvedFixture(
 			'mutation($id:ID!,$input:UpdateProjectInput!){updateProject(projectId:$id,input:$input){_id}}',
 			{
 				id: projectId,
@@ -464,7 +483,7 @@ describe('CreatorHub workflow', () => {
 			},
 			creator.accessToken,
 		);
-		await ok(
+		await approvedFixture(
 			'mutation($id:ID!){setProjectStatus(projectId:$id,status:PUBLISHED){status}}',
 			{ id: projectId },
 			creator.accessToken,
@@ -493,7 +512,7 @@ describe('CreatorHub workflow', () => {
 			creator.accessToken,
 		);
 		serviceId = service.createService._id;
-		await ok(
+		await approvedFixture(
 			'mutation($id:ID!){setServiceStatus(serviceId:$id,status:ACTIVE){status}}',
 			{ id: serviceId },
 			creator.accessToken,
@@ -584,7 +603,7 @@ describe('CreatorHub workflow', () => {
 		await submit(item);
 		expect(await db.model('InquiryEvent').countDocuments({ inquiryId: item._id })).toBe(1);
 		expect(await db.model('Notification').countDocuments()).toBe(1);
-		await ok(
+		await approvedFixture(
 			'mutation($id:ID!,$input:UpdateServiceInput!){updateService(serviceId:$id,input:$input){title}}',
 			{ id: serviceId, input: { title: 'Revised package', startingPrice: 700000 } },
 			creator.accessToken,
@@ -663,7 +682,7 @@ describe('CreatorHub workflow', () => {
 			{ input: { slug: 'another-studio', headline: 'Another designer', city: 'busan', categoryIds: [categoryId] } },
 			other.accessToken,
 		);
-		await ok('mutation{setCreatorProfileStatus(status:PUBLISHED){_id}}', {}, other.accessToken);
+		await approvedFixture('mutation{setCreatorProfileStatus(status:PUBLISHED){_id}}', {}, other.accessToken);
 		const item = await draft({ creatorId: profile.createCreatorProfile._id, serviceId });
 		expect(
 			(
@@ -679,7 +698,7 @@ describe('CreatorHub workflow', () => {
 
 	it('hides saved and direct content while retaining existing conversations', async () => {
 		const sent = await submit(await draft());
-		await ok('mutation{setCreatorProfileStatus(status:HIDDEN){status}}', {}, creator.accessToken);
+		await approvedFixture('mutation{setCreatorProfileStatus(status:HIDDEN){status}}', {}, creator.accessToken);
 		expect((await gql('query($id:ID!){getProject(projectId:$id){title}}', { id: projectId })).errors).toBeDefined();
 		const saved = await ok(
 			'{\n  getSavedProjects {\n    list {\n      available\n      project {\n        title\n      }\n    }\n  }\n}',
@@ -689,7 +708,7 @@ describe('CreatorHub workflow', () => {
 		expect(saved.getSavedProjects.list[0].available).toBe(false);
 		expect(saved.getSavedProjects.list[0].project).toBeNull();
 		expect((await message(sent, creator.accessToken)).errors).toBeUndefined();
-		await ok('mutation{setCreatorProfileStatus(status:PUBLISHED){status}}', {}, creator.accessToken);
+		await approvedFixture('mutation{setCreatorProfileStatus(status:PUBLISHED){status}}', {}, creator.accessToken);
 	});
 
 	it('rotates refresh tokens, rejects expired reset tokens, and revokes access on logout', async () => {
@@ -709,7 +728,11 @@ describe('CreatorHub workflow', () => {
 		});
 		await db.model('AuthToken').updateMany(
 			{
-				authIdentityId: (await db.model('AuthIdentity').findOne({ userId: outsider.user._id }))._id,
+				authIdentityId: (
+					await db
+						.model('AuthIdentity')
+						.findOne({ userId: outsider.user._id, provider: 'EMAIL', revokedAt: { $exists: false } })
+				)._id,
 				purpose: 'PASSWORD_RESET',
 			},
 			{ $set: { expiresAt: new Date(Date.now() - 1000) } },
@@ -799,7 +822,7 @@ describe('CreatorHub workflow', () => {
 
 	it('rechecks creator availability and paused services at submission', async () => {
 		const item = await draft({ serviceId });
-		await ok(
+		await approvedFixture(
 			'mutation($input:UpdateCreatorInput!){updateCreatorProfile(input:$input){availability}}',
 			{ input: { availability: 'UNAVAILABLE' } },
 			creator.accessToken,
@@ -808,12 +831,12 @@ describe('CreatorHub workflow', () => {
 		expect(
 			(await gql(operation, { input: { inquiryId: item._id, expectedVersion: 0 } }, client.accessToken)).errors,
 		).toBeDefined();
-		await ok(
+		await approvedFixture(
 			'mutation($input:UpdateCreatorInput!){updateCreatorProfile(input:$input){availability}}',
 			{ input: { availability: 'AVAILABLE' } },
 			creator.accessToken,
 		);
-		await ok(
+		await approvedFixture(
 			'mutation($id:ID!){setServiceStatus(serviceId:$id,status:PAUSED){status}}',
 			{ id: serviceId },
 			creator.accessToken,
@@ -822,7 +845,7 @@ describe('CreatorHub workflow', () => {
 			(await gql(operation, { input: { inquiryId: item._id, expectedVersion: 0 } }, client.accessToken)).errors,
 		).toBeDefined();
 		expect(await db.model('InquiryEvent').countDocuments({ inquiryId: item._id })).toBe(0);
-		await ok(
+		await approvedFixture(
 			'mutation($id:ID!){setServiceStatus(serviceId:$id,status:ACTIVE){status}}',
 			{ id: serviceId },
 			creator.accessToken,
@@ -961,7 +984,7 @@ describe('CreatorHub workflow', () => {
 		const followerBefore = await db
 			.model('Notification')
 			.countDocuments({ recipientId: client.user._id, activityEventId: { $exists: true } });
-		await ok(
+		await approvedFixture(
 			'mutation($input:UpdateCreatorInput!){updateCreatorProfile(input:$input){_id}}',
 			{ input: { bio: 'Updated studio description' } },
 			creator.accessToken,
@@ -989,20 +1012,20 @@ describe('CreatorHub workflow', () => {
 				.model('Notification')
 				.countDocuments({ recipientId: client.user._id, activityEventId: { $exists: true } }),
 		).toBe(followerBefore);
-		await ok(publish, { id, status: 'PUBLISHED' }, creator.accessToken);
+		await approvedFixture(publish, { id, status: 'PUBLISHED' }, creator.accessToken);
 		await activity.deliverPending();
 		const publication = await db.model('ActivityEvent').findOne({ projectId: id, type: 'PROJECT_PUBLISHED' });
 		expect(
 			await db.model('Notification').countDocuments({ recipientId: client.user._id, activityEventId: publication._id }),
 		).toBe(1);
-		await ok(publish, { id, status: 'ARCHIVED' }, creator.accessToken);
+		await approvedFixture(publish, { id, status: 'ARCHIVED' }, creator.accessToken);
 		const hidden = await ok(
 			'{\n  getNotifications {\n    list {\n      activityEvent {\n        projectId\n      }\n      unavailable\n    }\n  }\n}',
 			{},
 			client.accessToken,
 		);
 		expect(hidden.getNotifications.list.some((item) => item.unavailable)).toBe(true);
-		await ok(publish, { id, status: 'PUBLISHED' }, creator.accessToken);
+		await approvedFixture(publish, { id, status: 'PUBLISHED' }, creator.accessToken);
 		await activity.deliverPending();
 		expect(await db.model('ActivityEvent').countDocuments({ projectId: id, type: 'PROJECT_PUBLISHED' })).toBe(1);
 		expect(
@@ -1086,7 +1109,7 @@ describe('CreatorHub workflow', () => {
 			{ input: { slug: 'admin-creator', headline: 'Administrator creator', city: 'seoul', categoryIds: [categoryId] } },
 			admin.accessToken,
 		);
-		await ok('mutation{setCreatorProfileStatus(status:PUBLISHED){_id}}', {}, admin.accessToken);
+		await approvedFixture('mutation{setCreatorProfileStatus(status:PUBLISHED){_id}}', {}, admin.accessToken);
 		expect((await ok('query{me{role}}', {}, admin.accessToken)).me.role).toBe('ADMIN');
 		await ok('mutation{deleteCreatorProfile}', {}, admin.accessToken);
 	});
@@ -1098,7 +1121,7 @@ describe('CreatorHub workflow', () => {
 			{ input: { slug: 'retired-studio', headline: 'Brand designer', city: 'seoul', categoryIds: [categoryId] } },
 			owner.accessToken,
 		);
-		await ok('mutation{setCreatorProfileStatus(status:PUBLISHED){status}}', {}, owner.accessToken);
+		await approvedFixture('mutation{setCreatorProfileStatus(status:PUBLISHED){status}}', {}, owner.accessToken);
 		const sent = await submit(await draft({ creatorId: profile.createCreatorProfile._id }));
 		await ok('mutation{deleteCreatorProfile}', {}, owner.accessToken);
 		await ok('query($id:ID!){getInquiry(inquiryId:$id){_id}}', { id: sent._id }, owner.accessToken);

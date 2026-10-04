@@ -26,7 +26,7 @@ export class RegisterInput {
 
 	@Field(() => String)
 	@IsString()
-	@Length(12, 128)
+	@Length(6, 30)
 	declare password: string;
 
 	@Field(() => String)
@@ -64,7 +64,7 @@ export class ResetPasswordInput {
 
 	@Field(() => String)
 	@IsString()
-	@Length(12, 128)
+	@Length(6, 30)
 	declare password: string;
 }
 
@@ -101,7 +101,7 @@ export class PhoneRegisterInput extends PhoneLoginInput {
 	@Field(() => String)
 	displayName!: string;
 
-	@Length(12, 128)
+	@Length(6, 30)
 	declare password: string;
 
 	@ValidateIf((_object, value) => value !== undefined)
@@ -147,7 +147,7 @@ export class LinkPhoneInput extends OmitType(PhoneRegisterInput, ['displayName',
 @InputType()
 export class ChangePhonePasswordInput {
 	@IsString()
-	@Length(12, 128)
+	@Length(6, 30)
 	@Field(() => String)
 	password!: string;
 }

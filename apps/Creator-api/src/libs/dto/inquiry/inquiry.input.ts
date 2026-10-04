@@ -104,3 +104,39 @@ export class CreateInquiryInput extends DraftFieldsInput {
 	@IsMongoId()
 	creatorId!: string;
 }
+
+@InputType()
+export class SendInquiryInput extends CreateInquiryInput {
+	@Field(() => String)
+	@IsString()
+	@Length(1, 150)
+	declare subject: string;
+
+	@Field(() => String)
+	@IsString()
+	@Length(20, 10000)
+	declare brief: string;
+
+	@Field(() => String)
+	@IsUUID()
+	clientRequestKey!: string;
+}
+
+@InputType()
+export class CreateServiceFeedbackInput {
+	@Field(() => ID)
+	@IsMongoId()
+	inquiryId!: string;
+
+	@Field(() => Int)
+	@IsInt()
+	@Min(1)
+	@Max(5)
+	rating!: number;
+
+	@Field(() => String)
+	@Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+	@IsString()
+	@Length(1, 2000)
+	feedback!: string;
+}

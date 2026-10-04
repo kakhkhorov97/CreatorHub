@@ -21,6 +21,7 @@ export class DiscoveryInput {
 	@ValidateIf((_object, value) => value !== undefined)
 	@IsEnum(ProjectSort)
 	sort?: ProjectSort;
+
 	@Field(() => [ID], { nullable: true })
 	@ValidateIf((_object, value) => value !== undefined)
 	@IsArray()

@@ -87,12 +87,24 @@ ActivityEventSchema.index({ performedById: 1, actionKey: 1 }, { unique: true, na
 
 ActivityEventSchema.index(
 	{ projectId: 1 },
-	{ unique: true, partialFilterExpression: { type: 'PROJECT_PUBLISHED' }, name: 'uq_activity_publication' },
+	{
+		unique: true,
+		partialFilterExpression: {
+			type: 'PROJECT_PUBLISHED',
+		},
+		name: 'uq_activity_publication',
+	},
 );
 
 ActivityEventSchema.index(
 	{ commentId: 1 },
-	{ unique: true, partialFilterExpression: { type: 'PROJECT_COMMENTED' }, name: 'uq_activity_comment' },
+	{
+		unique: true,
+		partialFilterExpression: {
+			type: 'PROJECT_COMMENTED',
+		},
+		name: 'uq_activity_comment',
+	},
 );
 
 ActivityEventSchema.index(

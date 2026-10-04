@@ -31,6 +31,7 @@ export function nextInquiryStatus(
 	}
 	check(isClient || status === InquiryStatus.IN_DISCUSSION, 'The creator must reply before closing an inquiry');
 	check(outcome !== undefined, 'Closing requires an outcome');
+	check(outcome !== InquiryOutcome.COMPLETED, 'Mark work completed after closing with agreement');
 	if (outcome === InquiryOutcome.AGREED_TO_PROCEED)
 		check(status === InquiryStatus.IN_DISCUSSION, 'Agreement requires a discussion');
 	if (outcome === InquiryOutcome.NO_RESPONSE)

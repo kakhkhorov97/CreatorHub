@@ -1,3 +1,5 @@
+import { ServiceFeedback, ServiceFeedbacks } from '../../libs/dto/inquiry/service-feedback';
+import { SendInquiryInput, CreateServiceFeedbackInput } from '../../libs/dto/inquiry/inquiry.input';
 import { InquiryEvents } from '../../libs/dto/inquiry/inquiry-event';
 import { InquiryMessages } from '../../libs/dto/inquiry/inquiry-message';
 import { Inquiries } from '../../libs/dto/inquiry/inquiry';
@@ -57,6 +59,26 @@ export class InquiryResolver {
 	}
 
 	@Mutation(() => Inquiry)
+	public sendInquiry(@AuthMember() currentUser: User, @Args('input') input: SendInquiryInput) {
+		return this.inquiryService.sendInquiry(currentUser, input);
+	}
+
+	@Mutation(() => Inquiry)
+	public completeInquiry(@AuthMember() currentUser: User, @Args('input') input: InquiryVersionInput) {
+		return this.inquiryService.completeInquiry(currentUser, input);
+	}
+
+	@Mutation(() => ServiceFeedback)
+	public createServiceFeedback(@AuthMember() currentUser: User, @Args('input') input: CreateServiceFeedbackInput) {
+		return this.inquiryService.createFeedback(currentUser, input);
+	}
+
+	@Query(() => ServiceFeedback, { nullable: true })
+	public getInquiryFeedback(@AuthMember() currentUser: User, @Args('inquiryId', { type: () => ID }) id: string) {
+		return this.inquiryService.myFeedback(currentUser, id);
+	}
+
+	@Mutation(() => Inquiry)
 	public createInquiry(@AuthMember() currentUser: User, @Args('input') input: CreateInquiryInput) {
 		return this.inquiryService.createInquiry(currentUser, input);
 	}
@@ -99,5 +121,18 @@ export class InquiryResolver {
 	@Mutation(() => Inquiry)
 	public closeInquiry(@AuthMember() currentUser: User, @Args('input') input: CloseInquiryInput) {
 		return this.inquiryService.finishInquiry(currentUser, input, 'CLOSE');
+	}
+}
+
+@Resolver()
+export class ServiceFeedbackResolver {
+	constructor(private readonly inquiries: InquiryService) {}
+
+	@Query(() => ServiceFeedbacks)
+	public getCreatorFeedback(
+		@Args('creatorId', { type: () => ID }) id: string,
+		@Args('input', { defaultValue: {} }) input: PageInput,
+	) {
+		return this.inquiries.creatorFeedback(id, input);
 	}
 }

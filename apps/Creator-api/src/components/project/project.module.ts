@@ -1,4 +1,5 @@
 import { ActivityModule } from '../activity/activity.module';
+import { ReviewModule } from '../review/review.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MediaPolicy } from '../../libs/helpers/media-policy.service';
@@ -11,6 +12,7 @@ import { ProjectService } from './project.service';
 
 @Module({
 	imports: [
+		ReviewModule,
 		ActivityModule,
 		AuthModule,
 		CreatorModule,

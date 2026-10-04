@@ -1,3 +1,4 @@
+import { ReviewModule } from '../review/review.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import CreatorProfileSchema from '../../schemas/CreatorProfile.model';
@@ -10,6 +11,7 @@ import { VisibilityService } from './visibility.service';
 
 @Module({
 	imports: [
+		ReviewModule,
 		AuthModule,
 		CategoryModule,
 		MongooseModule.forFeature([
