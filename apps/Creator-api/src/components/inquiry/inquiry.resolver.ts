@@ -4,7 +4,7 @@ import { InquiryEvents } from '../../libs/dto/inquiry/inquiry-event';
 import { InquiryMessages } from '../../libs/dto/inquiry/inquiry-message';
 import { Inquiries } from '../../libs/dto/inquiry/inquiry';
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, ID, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { PageInput } from '../../libs/dto/common/pagination.input';
 import { Inquiry } from '../../libs/dto/inquiry/inquiry';
 
@@ -26,6 +26,16 @@ import { InquiryService } from './inquiry.service';
 export class InquiryResolver {
 	constructor(private readonly inquiryService: InquiryService) {}
 
+	@Query(() => Int)
+	public getUnreadInquiryCount(@AuthMember() currentUser: User) {
+		return this.inquiryService.unreadCount(currentUser);
+	}
+
+	@Mutation(() => Boolean)
+	public markInquiryRead(@AuthMember() currentUser: User, @Args('input') input: InquiryVersionInput) {
+		return this.inquiryService.markInquiryRead(currentUser, input);
+	}
+
 	@Query(() => Inquiry)
 	public getInquiry(@AuthMember() currentUser: User, @Args('inquiryId', { type: () => ID }) id: string) {
 		return this.inquiryService.getInquiry(currentUser, id);
@@ -35,9 +45,10 @@ export class InquiryResolver {
 	public getInquiries(
 		@AuthMember() currentUser: User,
 		@Args('creatorInbox', { defaultValue: false }) creatorInbox: boolean,
+		@Args('allConversations', { defaultValue: false }) allConversations: boolean,
 		@Args('input', { defaultValue: {} }) input: PageInput,
 	) {
-		return this.inquiryService.getInquiries(currentUser, creatorInbox, input);
+		return this.inquiryService.getInquiries(currentUser, creatorInbox, input, allConversations);
 	}
 
 	@Query(() => InquiryMessages)

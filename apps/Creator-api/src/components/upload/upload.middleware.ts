@@ -17,4 +17,14 @@ export function configureUploads(app: INestApplication): void {
 			},
 		}),
 	);
+	app.use(
+		'/demo-media',
+		express.static(resolve('public/demo-media'), {
+			dotfiles: 'deny',
+			index: false,
+			setHeaders(response) {
+				response.setHeader('X-Content-Type-Options', 'nosniff');
+			},
+		}),
+	);
 }

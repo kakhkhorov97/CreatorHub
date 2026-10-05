@@ -4,6 +4,8 @@ import { Entity } from '../common/entity';
 
 @ObjectType()
 export class Notification extends Entity {
+	inboxReadAt?: Date;
+
 	@Field(() => ID)
 	recipientId!: Types.ObjectId;
 

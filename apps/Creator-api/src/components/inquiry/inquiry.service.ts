@@ -3,7 +3,7 @@ import { ServiceFeedback } from '../../libs/dto/inquiry/service-feedback';
 import { SendInquiryInput, CreateServiceFeedbackInput } from '../../libs/dto/inquiry/inquiry.input';
 import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Connection, HydratedDocument, Model, Types } from 'mongoose';
+import { ClientSession, Connection, FilterQuery, HydratedDocument, Model, Types } from 'mongoose';
 import { PageInput } from '../../libs/dto/common/pagination.input';
 import { CreatorProfile } from '../../libs/dto/creator/creator-profile';
 import { Inquiry } from '../../libs/dto/inquiry/inquiry';
@@ -112,22 +112,102 @@ export class InquiryService {
 	}
 
 	public async getInquiry(currentUser: User, id: string) {
-		return (await this.participant(currentUser, id)).inquiry;
+		const { inquiry } = await this.participant(currentUser, id);
+		return (await this.inboxOutput(currentUser, [inquiry]))[0];
 	}
 
-	public async getInquiries(currentUser: User, creatorInbox: boolean, input: PageInput) {
+	public async getInquiries(currentUser: User, creatorInbox: boolean, input: PageInput, allConversations = false) {
 		requireActive(currentUser);
 		const { offset, limit } = page(input);
-		const creator = creatorInbox ? await this.profileModel.findOne({ userId: currentUser._id }) : null;
-		if (creatorInbox && !creator) return { list: [], metaCounter: [] };
-		const query = this.inquiryModel.find(
-			creatorInbox ? { creatorId: creator!._id, status: { $ne: InquiryStatus.DRAFT } } : { clientId: currentUser._id },
-		);
+		const creator =
+			creatorInbox || allConversations ? await this.profileModel.findOne({ userId: currentUser._id }) : null;
+		if (creatorInbox && !allConversations && !creator) return { list: [], metaCounter: [] };
+		const received: FilterQuery<Inquiry> = { creatorId: creator?._id, status: { $ne: InquiryStatus.DRAFT } };
+		const sent: FilterQuery<Inquiry> = { clientId: currentUser._id };
+		const filter: FilterQuery<Inquiry> = allConversations
+			? { $or: creator ? [sent, received] : [sent] }
+			: creatorInbox
+				? received
+				: sent;
+		const query = this.inquiryModel.find(filter);
 		const [list, total] = await Promise.all([
 			query.clone().sort({ updatedAt: -1, _id: -1 }).skip(offset).limit(limit),
 			query.countDocuments(),
 		]);
-		return { list, metaCounter: total ? [{ total }] : [] };
+		return { list: await this.inboxOutput(currentUser, list), metaCounter: total ? [{ total }] : [] };
+	}
+
+	private async unreadByInquiry(currentUser: User) {
+		requireActive(currentUser);
+		return this.notificationModel.aggregate<{ _id: Types.ObjectId; count: number }>([
+			{ $match: { recipientId: currentUser._id, inboxReadAt: { $exists: false }, inquiryEventId: { $exists: true } } },
+			{
+				$lookup: {
+					from: this.eventModel.collection.name,
+					localField: 'inquiryEventId',
+					foreignField: '_id',
+					as: 'event',
+				},
+			},
+			{ $unwind: '$event' },
+			{ $match: { 'event.type': { $in: [InquiryEventType.SUBMITTED, InquiryEventType.MESSAGE_SENT] } } },
+			{ $group: { _id: '$event.inquiryId', count: { $sum: 1 } } },
+		]);
+	}
+
+	public async unreadCount(currentUser: User) {
+		return (await this.unreadByInquiry(currentUser)).length;
+	}
+
+	private async inboxOutput(currentUser: User, rows: HydratedDocument<Inquiry>[]) {
+		const profiles = await this.profileModel.find({ _id: { $in: rows.map((row) => row.creatorId) } });
+		const owners = new Map(profiles.map((profile) => [String(profile._id), profile.userId]));
+		const ids = rows.map((row) =>
+			sameId(row.clientId, currentUser._id) ? owners.get(String(row.creatorId)) : row.clientId,
+		);
+		const [users, unread] = await Promise.all([
+			this.userModel.find({ _id: { $in: ids.filter(Boolean) } }),
+			this.unreadByInquiry(currentUser),
+		]);
+		return rows.map((row, index) => {
+			const user = users.find((candidate) => ids[index] && sameId(candidate._id, ids[index]!));
+			return {
+				...row.toObject(),
+				counterpartyName: user?.displayName || 'Former member',
+				counterpartyAvatarUrl: user?.avatarUrl,
+				unreadCount: unread.find((item) => sameId(item._id, row._id))?.count || 0,
+			};
+		});
+	}
+
+	public async markInquiryRead(currentUser: User, input: InquiryVersionInput) {
+		const { inquiry } = await this.participant(currentUser, input.inquiryId);
+		check(input.expectedVersion <= inquiry.version, 'Cannot read a future inquiry version');
+		// Bound the acknowledgement to the version rendered by the viewer. Later replies stay unread.
+		const events = await this.eventModel.find({
+			inquiryId: inquiry._id,
+			version: { $lte: input.expectedVersion },
+			performedById: { $ne: currentUser._id },
+		});
+		const now = new Date();
+		await this.notificationModel.updateMany(
+			{
+				recipientId: currentUser._id,
+				inquiryEventId: { $in: events.map((event) => event._id) },
+				inboxReadAt: { $exists: false },
+			},
+			{ $set: { inboxReadAt: now, readAt: now } },
+		);
+		await this.messageModel.updateMany(
+			{
+				inquiryId: inquiry._id,
+				senderId: { $ne: currentUser._id },
+				_id: { $in: events.map((event) => event.messageId).filter(Boolean) },
+				readAt: { $exists: false },
+			},
+			{ $set: { readAt: now } },
+		);
+		return true;
 	}
 
 	public async getMessages(currentUser: User, id: string, input: PageInput) {

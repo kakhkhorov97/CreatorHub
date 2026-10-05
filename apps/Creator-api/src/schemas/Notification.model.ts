@@ -22,6 +22,8 @@ const NotificationSchema = new Schema(
 			immutable: true,
 		},
 
+		inboxReadAt: { type: Date, required: false },
+
 		readAt: {
 			type: Date,
 			required: false,

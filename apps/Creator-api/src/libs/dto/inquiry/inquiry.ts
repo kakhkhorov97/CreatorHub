@@ -11,6 +11,15 @@ import { InquiryServiceSnapshot } from '../common/inquiry-service-snapshot';
 export class Inquiry extends MutableEntity {
 	clientRequestKey?: string;
 
+	@Field(() => String, { nullable: true })
+	counterpartyName?: string;
+
+	@Field(() => String, { nullable: true })
+	counterpartyAvatarUrl?: string;
+
+	@Field(() => Int, { nullable: true })
+	unreadCount?: number;
+
 	@Field(() => ID)
 	clientId!: Types.ObjectId;
 

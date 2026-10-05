@@ -114,3 +114,7 @@ The website sends new inquiries directly with `sendInquiry`. Creation, submissio
 Only the original customer can mark an agreed, closed inquiry completed with `completeInquiry`, then submit one 1–5 rating and written review through `createServiceFeedback`. Public `getCreatorFeedback` requires a visible Korea-based creator; private `getInquiryFeedback` requires an inquiry participant. The same account retains its ID and credentials when becoming a creator.
 
 New passwords are 6–30 characters. Existing bcrypt and scrypt passwords still verify. Passwords exceeding bcrypt's byte limit use a versioned SHA-256 prehash to preserve every character.
+
+### Bundled demo artwork
+
+The 51 approved demo portraits and project images are stored in `public/demo-media/`. The API serves them at `/demo-media/<filename>`. `npm run build` packages the same files into `dist/apps/Creator-api/public/demo-media/`. When deploying from the repository, keep `public/demo-media/` beside the application. When deploying only the compiled API directory, start it from `dist/apps/Creator-api` so its packaged `public/demo-media/` is the working directory's public folder. These bundled files are separate from creator uploads in `uploads/`; they do not require MongoDB binary storage. The public URL remains available even if a linked record is unpublished, so do not place private material in this folder.
