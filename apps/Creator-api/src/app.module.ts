@@ -10,6 +10,7 @@ import { ComponentsModule } from './components/components.module';
 import { DatabaseModule } from './database/database.module';
 import { validateEnvironment } from './libs/config';
 import { GraphqlErrorFilter } from './libs/filters/graphql-error.filter';
+import { AuthModule } from './components/auth/auth.module';
 import { RateLimitGuard } from './components/auth/guards/rate-limit.guard';
 import { graphqlRequestLogger } from './libs/interceptors/request-logger';
 
@@ -28,6 +29,7 @@ import { graphqlRequestLogger } from './libs/interceptors/request-logger';
 			plugins: [graphqlRequestLogger],
 		}),
 		DatabaseModule,
+		AuthModule,
 		ComponentsModule,
 	],
 	controllers: [AppController],

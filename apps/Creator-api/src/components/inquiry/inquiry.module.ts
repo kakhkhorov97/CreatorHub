@@ -1,3 +1,5 @@
+import { InquiryGateway } from './inquiry.gateway';
+import { InquiryRealtimeService } from './inquiry-realtime.service';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import CreatorProfileSchema from '../../schemas/CreatorProfile.model';
@@ -28,7 +30,7 @@ import { InquiryService } from './inquiry.service';
 			{ name: 'User', schema: UserSchema },
 		]),
 	],
-	providers: [InquiryService, InquiryResolver, ServiceFeedbackResolver],
+	providers: [InquiryService, InquiryResolver, ServiceFeedbackResolver, InquiryGateway, InquiryRealtimeService],
 	exports: [InquiryService],
 })
 export class InquiryModule {}

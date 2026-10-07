@@ -237,9 +237,9 @@ export class AuthService {
 		});
 	}
 
-	public async authenticate(accessToken: string): Promise<{ user: User; sessionId: string }> {
+	public async authenticate(accessToken: string): Promise<{ user: User; sessionId: string; expiresAt: number }> {
 		try {
-			const payload = await this.jwt.verifyAsync<{ sub: string; sid: string }>(accessToken);
+			const payload = await this.jwt.verifyAsync<{ sub: string; sid: string; exp: number }>(accessToken);
 			const session = await this.sessions.findOne({
 				_id: shapeIntoMongooseObjectId(payload.sid),
 				userId: shapeIntoMongooseObjectId(payload.sub),
@@ -248,7 +248,11 @@ export class AuthService {
 			});
 			if (!session) throw new Error('Inactive session');
 			await this.requireUsable(await this.identities.findOne({ _id: session.authIdentityId, userId: session.userId }));
-			return { user: await this.activeUser(session.userId), sessionId: String(session._id) };
+			return {
+				user: await this.activeUser(session.userId),
+				sessionId: String(session._id),
+				expiresAt: payload.exp * 1000,
+			};
 		} catch {
 			throw new UnauthorizedException('Sign in with an available, verified method to continue');
 		}

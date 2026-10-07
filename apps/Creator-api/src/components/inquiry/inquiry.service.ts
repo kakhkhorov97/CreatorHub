@@ -1,3 +1,4 @@
+import { InquiryChange, InquiryRealtimeService } from './inquiry-realtime.service';
 import { InquiryOutcome } from '../../libs/enums/inquiry-outcome.enum';
 import { ServiceFeedback } from '../../libs/dto/inquiry/service-feedback';
 import { SendInquiryInput, CreateServiceFeedbackInput } from '../../libs/dto/inquiry/inquiry.input';
@@ -50,6 +51,7 @@ export class InquiryService {
 		@InjectConnection() private readonly connection: Connection,
 		private readonly visibility: VisibilityService,
 		private readonly services: ServiceService,
+		private readonly realtime: InquiryRealtimeService,
 	) {}
 
 	private async participant(currentUser: User, id: string, session: ClientSession | null = null) {
@@ -63,6 +65,23 @@ export class InquiryService {
 		if (!isClient && (!sameId(creator.userId, currentUser._id) || inquiry.status === InquiryStatus.DRAFT))
 			throw new ForbiddenException('This inquiry is private');
 		return { inquiry, creator, isClient, otherId: isClient ? creator.userId : inquiry.clientId };
+	}
+
+	public async authorizeRoom(currentUser: User, id: string) {
+		const { inquiry } = await this.participant(currentUser, id);
+		check(inquiry.status !== InquiryStatus.DRAFT, 'Draft inquiries do not have a conversation room');
+	}
+
+	private async publish(currentUser: User, id: string, kind: InquiryChange['kind'], message?: InquiryMessage) {
+		try {
+			const { inquiry, otherId } = await this.participant(currentUser, id);
+			await this.realtime.publish(
+				{ inquiryId: id, kind, version: inquiry.version, ...(message ? { message } : {}) },
+				inquiry.status === InquiryStatus.DRAFT ? [String(currentUser._id)] : [String(currentUser._id), String(otherId)],
+			);
+		} catch {
+			this.realtime.failedToPublish();
+		}
 	}
 
 	private validateBudget(input: Pick<Inquiry, 'budgetMin' | 'budgetMax'>) {
@@ -207,6 +226,7 @@ export class InquiryService {
 			},
 			{ $set: { readAt: now } },
 		);
+		await this.publish(currentUser, input.inquiryId, 'read');
 		return true;
 	}
 
@@ -240,6 +260,7 @@ export class InquiryService {
 			{ _id: message._id, readAt: { $exists: false } },
 			{ $set: { readAt: new Date() } },
 		);
+		await this.publish(currentUser, String(message.inquiryId), 'read');
 		return true;
 	}
 
@@ -270,7 +291,9 @@ export class InquiryService {
 	}
 
 	public async submitInquiry(currentUser: User, input: InquiryVersionInput) {
-		return this.connection.transaction((session) => this.submitInSession(currentUser, input, session));
+		const inquiry = await this.connection.transaction((session) => this.submitInSession(currentUser, input, session));
+		await this.publish(currentUser, String(inquiry._id), 'inquiry');
+		return inquiry;
 	}
 
 	private async submitInSession(currentUser: User, input: InquiryVersionInput, session: ClientSession) {
@@ -320,7 +343,7 @@ export class InquiryService {
 	public async sendInquiry(currentUser: User, input: SendInquiryInput) {
 		requireActive(currentUser);
 		try {
-			return await this.connection.transaction(async (session) => {
+			const inquiry = await this.connection.transaction(async (session) => {
 				const existing = await this.inquiryModel
 					.findOne({ clientId: currentUser._id, clientRequestKey: input.clientRequestKey })
 					.session(session);
@@ -330,6 +353,8 @@ export class InquiryService {
 				});
 				return this.submitInSession(currentUser, { inquiryId: String(inquiry._id), expectedVersion: 0 }, session);
 			});
+			await this.publish(currentUser, String(inquiry._id), 'inquiry');
+			return inquiry;
 		} catch (error) {
 			if (!duplicateKey(error)) throw error;
 			return requireRecord(
@@ -339,7 +364,7 @@ export class InquiryService {
 	}
 
 	public async completeInquiry(currentUser: User, input: InquiryVersionInput) {
-		return this.connection.transaction(async (session) => {
+		const updated = await this.connection.transaction(async (session) => {
 			const { inquiry, isClient, otherId } = await this.participant(currentUser, input.inquiryId, session);
 			check(
 				isClient && inquiry.status === InquiryStatus.CLOSED && inquiry.outcome === InquiryOutcome.AGREED_TO_PROCEED,
@@ -354,6 +379,8 @@ export class InquiryService {
 			await this.recordEvent(updated, currentUser, otherId, inquiry.status, InquiryEventType.COMPLETED, session);
 			return updated;
 		});
+		await this.publish(currentUser, input.inquiryId, 'inquiry');
+		return updated;
 	}
 
 	private async feedbackOutput(feedback: HydratedDocument<ServiceFeedback>) {
@@ -424,7 +451,7 @@ export class InquiryService {
 
 	public async sendMessage(currentUser: User, input: SendMessageInput) {
 		try {
-			return await this.connection.transaction(async (session) => {
+			const message = await this.connection.transaction(async (session) => {
 				const { inquiry, isClient, otherId } = await this.participant(currentUser, input.inquiryId, session);
 				const previous = await this.messageModel
 					.findOne({ senderId: currentUser._id, clientMessageKey: input.clientMessageKey })
@@ -459,6 +486,8 @@ export class InquiryService {
 				);
 				return message;
 			});
+			await this.publish(currentUser, input.inquiryId, 'message', message);
+			return message;
 		} catch (error) {
 			if (!duplicateKey(error)) throw error;
 			await this.participant(currentUser, input.inquiryId);
@@ -476,7 +505,7 @@ export class InquiryService {
 		input: InquiryVersionInput | CloseInquiryInput,
 		action: 'DECLINE' | 'CANCEL' | 'CLOSE',
 	) {
-		return this.connection.transaction(async (session) => {
+		const updated = await this.connection.transaction(async (session) => {
 			const { inquiry, isClient, otherId } = await this.participant(currentUser, input.inquiryId, session);
 			const outcome = 'outcome' in input ? input.outcome : undefined;
 			const status = nextInquiryStatus(inquiry.status, action, isClient, outcome, inquiry.submittedAt);
@@ -498,5 +527,7 @@ export class InquiryService {
 			await this.recordEvent(updated, currentUser, otherId, inquiry.status, event, session);
 			return updated;
 		});
+		await this.publish(currentUser, input.inquiryId, 'inquiry');
+		return updated;
 	}
 }
