@@ -1,3 +1,4 @@
+import { CreatorProfile } from '../../libs/dto/creator/creator-profile';
 import { CreatorFollow } from '../../libs/dto/follow/creator-follow';
 import { ActivityService } from '../activity/activity.service';
 import { Injectable } from '@nestjs/common';
@@ -19,6 +20,8 @@ export class FollowService {
 		private readonly activity: ActivityService,
 		@InjectModel('CreatorFollow') private readonly follows: Model<CreatorFollow>,
 		private readonly visibility: VisibilityService,
+		@InjectModel('User') private readonly users: Model<User>,
+		@InjectModel('CreatorProfile') private readonly profiles: Model<CreatorProfile>,
 	) {}
 
 	public async setFollow(currentUser: User, id: string, following: boolean) {
@@ -60,5 +63,31 @@ export class FollowService {
 			query.countDocuments(),
 		]);
 		return { list, metaCounter: total ? [{ total }] : [] };
+	}
+
+	public async getMyFollowers(currentUser: User, input: PageInput) {
+		requireActive(currentUser);
+		const profile = await this.profiles.findOne({ userId: currentUser._id, deletedAt: null }).select('_id');
+		if (!profile) return { list: [], metaCounter: [] };
+		const { offset, limit } = page(input);
+		// Identity projection deliberately excludes private account fields and auth identities.
+		const [result] = await this.follows.aggregate([
+			{ $match: { creatorId: profile._id, isActive: true } },
+			{ $sort: { followedAt: -1, _id: -1 } },
+			{ $lookup: { from: this.users.collection.name, localField: 'followerId', foreignField: '_id', as: 'member' } },
+			{ $unwind: '$member' },
+			{ $match: { 'member.status': 'ACTIVE', 'member.deletedAt': null } },
+			{
+				$facet: {
+					list: [
+						{ $skip: offset },
+						{ $limit: limit },
+						{ $project: { _id: '$member._id', displayName: '$member.displayName', avatarUrl: '$member.avatarUrl' } },
+					],
+					metaCounter: [{ $count: 'total' }],
+				},
+			},
+		]);
+		return result || { list: [], metaCounter: [] };
 	}
 }

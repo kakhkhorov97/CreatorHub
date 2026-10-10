@@ -9,11 +9,12 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { Connection } from 'mongoose';
+import { Connection, Types } from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { SocialAuthService } from '../src/components/auth/social-auth.service';
 import { ActivityService } from '../src/components/activity/activity.service';
+import { AuthService } from '../src/components/auth/auth.service';
 import { MailService } from '../src/components/auth/mail.service';
 
 // Full HTTP/GraphQL tests against a disposable replica set, including real indexes and transactions.
@@ -56,11 +57,31 @@ describe('CreatorHub workflow', () => {
 	async function account(email: string) {
 		const data = await ok(
 			'mutation($input:RegisterInput!){register(input:$input){accessToken refreshToken user{_id role}}}',
-			{ input: { email, password: 'Portfolio-test-password-123', displayName: 'Test Account' } },
+			{
+				input: {
+					email,
+					password: 'Portfolio-test-password-123',
+					displayName: 'Test Account',
+					phoneNumber: '+821023456789',
+				},
+			},
 		);
 		await ok('mutation($token:String!){verifyEmail(token:$token)}', { token: mail.get(`${email}:EMAIL_VERIFY`) });
 		return data.register;
 	}
+	// Seed historical phone credentials only in this disposable database to exercise migration paths.
+	async function legacyPhoneAccount(phoneNumber: string, password: string) {
+		const user = await db.model('User').create({ displayName: 'Legacy phone fixture' });
+		const auth = app.get(AuthService);
+		const identity = await db.model('AuthIdentity').create({
+			userId: user._id,
+			provider: 'PHONE',
+			providerSubject: phoneNumber,
+			passwordHash: await auth.hashPassword(password),
+		});
+		return (auth as any).createSession(user, identity);
+	}
+
 	async function draft(extra: Record<string, unknown> = {}) {
 		const data = await ok(
 			'mutation($input:CreateInquiryInput!){createInquiry(input:$input){_id version status}}',
@@ -144,7 +165,12 @@ describe('CreatorHub workflow', () => {
 
 	it('normalizes email, reserves it, and rejects role injection and null input fields', async () => {
 		const duplicate = await gql('mutation($input:RegisterInput!){register(input:$input){accessToken}}', {
-			input: { email: '  CLIENT@EXAMPLE.COM ', password: 'Portfolio-test-password-123', displayName: 'Duplicate' },
+			input: {
+				email: '  CLIENT@EXAMPLE.COM ',
+				password: 'Portfolio-test-password-123',
+				displayName: 'Duplicate',
+				phoneNumber: '+821023456789',
+			},
 		});
 		expect(duplicate.errors).toBeDefined();
 		const elevated = await gql('mutation($input:RegisterInput!){register(input:$input){accessToken}}', {
@@ -152,6 +178,7 @@ describe('CreatorHub workflow', () => {
 				email: 'attack@example.com',
 				password: 'Portfolio-test-password-123',
 				displayName: 'Attack',
+				phoneNumber: '+821023456789',
 				role: 'ADMIN',
 			},
 		});
@@ -164,52 +191,54 @@ describe('CreatorHub workflow', () => {
 		expect(nullInput.errors).toBeDefined();
 	});
 
-	it('registers a unique normalized phone without codes and stores only a private hash', async () => {
-		const input = { phoneNumber: '+82 (10) 2345-6789', password: 'Phone-test-password-123', displayName: 'Phone User' };
-		const registered = await ok(
-			'mutation($input:PhoneRegisterInput!){registerPhone(input:$input){accessToken user{_id role preferredLocale}}}',
-			{ input },
-		);
-		const phone = registered.registerPhone;
-		expect(phone.user.role).toBe('USER');
-		expect(phone.user.preferredLocale).toBe('en');
-		await ok('query{me{_id}}', {}, phone.accessToken);
-		const identity = await db.model('AuthIdentity').findOne({ userId: phone.user._id });
-		expect(identity.providerSubject).toBe('+821023456789');
-		expect(identity.verifiedAt).toBeUndefined();
-		expect(identity.passwordHash).toBeUndefined();
-		const privateIdentity = await db.model('AuthIdentity').findById(identity._id).select('+passwordHash');
-		expect(privateIdentity.passwordHash).toMatch(/^\$2[ab]\$12\$/);
-		expect((await db.model('User').findById(phone.user._id).lean())?.['passwordHash']).toBeUndefined();
-		expect(mail.has('+821023456789:EMAIL_VERIFY')).toBe(false);
-		const usersBefore = await db.model('User').countDocuments();
+	it('requires a valid private contact phone at email signup and blocks phone authentication', async () => {
+		const operation = 'mutation($input:RegisterInput!){register(input:$input){accessToken user{_id}}}';
+		const input = { email: 'contact@example.com', password: 'Contact-password-123', displayName: 'Contact member' };
+		for (const phoneNumber of [undefined, '', '01023456789', '+8210invalid']) {
+			expect((await gql(operation, { input: { ...input, phoneNumber } })).errors).toBeDefined();
+		}
+		const member = (await ok(operation, { input: { ...input, phoneNumber: '+82 (10) 2345-6789' } })).register;
+		const user = await db.model('User').findById(member.user._id).select('+phoneNumber');
+		expect(user.phoneNumber).toBe('+821023456789');
+		expect((await db.model('User').findById(user._id)).phoneNumber).toBeUndefined();
+		expect(await db.model('AuthIdentity').countDocuments({ userId: user._id, provider: 'PHONE' })).toBe(0);
+		expect((await gql('query{me{phoneNumber}}', {}, member.accessToken)).errors).toBeDefined();
 		expect(
 			(
 				await gql('mutation($input:PhoneRegisterInput!){registerPhone(input:$input){accessToken}}', {
-					input: { ...input, phoneNumber: '+821023456789' },
+					input: { phoneNumber: '+821023456789', password: input.password, displayName: input.displayName },
 				})
-			).errors,
-		).toBeDefined();
-		expect(await db.model('User').countDocuments()).toBe(usersBefore);
-		await ok('mutation($input:PhoneLoginInput!){loginPhone(input:$input){accessToken}}', {
-			input: { phoneNumber: input.phoneNumber, password: input.password },
+			).errors[0].message,
+		).toContain('Phone signup is unavailable');
+		await ok('mutation($token:String!){verifyEmail(token:$token)}', {
+			token: mail.get('contact@example.com:EMAIL_VERIFY'),
 		});
+		await ok('mutation($input:LoginInput!){login(input:$input){user{_id}}}', {
+			input: { email: input.email, password: input.password },
+		});
+		const legacy = await legacyPhoneAccount('+821011112222', input.password);
 		expect(
 			(
 				await gql('mutation($input:PhoneLoginInput!){loginPhone(input:$input){accessToken}}', {
-					input: { phoneNumber: input.phoneNumber, password: 'wrong-password' },
+					input: { phoneNumber: '+821011112222', password: input.password },
 				})
-			).errors,
-		).toBeDefined();
+			).errors[0].message,
+		).toContain('Phone login is unavailable');
+		// A legacy phone identity must not allow removal of the last verified email.
+		await db
+			.model('AuthIdentity')
+			.create({ userId: member.user._id, provider: 'PHONE', providerSubject: '+821022223333', passwordHash: 'unused' });
+		const email = await db.model('AuthIdentity').findOne({ userId: member.user._id, provider: 'EMAIL' });
 		expect(
 			(
-				await gql('mutation($input:PhoneRegisterInput!){registerPhone(input:$input){accessToken}}', {
-					input: { ...input, phoneNumber: '+821023456780', password: 'short' },
-				})
+				await gql(
+					'mutation($id:ID!){unlinkAuthIdentity(authIdentityId:$id)}',
+					{ id: String(email._id) },
+					member.accessToken,
+				)
 			).errors,
 		).toBeDefined();
-		await db.model('AuthIdentity').updateOne({ _id: identity._id }, { $set: { revokedAt: new Date() } });
-		expect((await gql('query{me{_id}}', {}, phone.accessToken)).errors).toBeDefined();
+		expect(legacy.user._id).toBeDefined();
 	});
 
 	it('links methods to one account, rejects collisions, and preserves a usable method during unlinking', async () => {
@@ -221,29 +250,22 @@ describe('CreatorHub workflow', () => {
 			(await gql('mutation($id:ID!){unlinkAuthIdentity(authIdentityId:$id)}', { id: emailId }, linked.accessToken))
 				.errors,
 		).toBeDefined();
-		const phone = await ok(
-			'mutation($input:LinkPhoneInput!){linkPhone(input:$input){_id userId provider}}',
+		const phone = await gql(
+			'mutation($input:LinkPhoneInput!){linkPhone(input:$input){_id}}',
 			{ input: { phoneNumber: '+821055556666', password: 'Linked-phone-password-123' } },
 			linked.accessToken,
 		);
-		expect(phone.linkPhone.userId).toBe(linked.user._id);
-		const collision = await gql(
-			'mutation($input:LinkPhoneInput!){linkPhone(input:$input){_id}}',
-			{ input: { phoneNumber: '+821055556666', password: 'Another-password-123' } },
-			client.accessToken,
-		);
-		expect(collision.errors).toBeDefined();
-		const logged = await ok('mutation($input:PhoneLoginInput!){loginPhone(input:$input){accessToken user{_id}}}', {
-			input: { phoneNumber: '+821055556666', password: 'Linked-phone-password-123' },
+		expect(phone.errors[0].message).toContain('cannot be linked for login');
+		const social = await db.model('AuthIdentity').create({
+			userId: linked.user._id,
+			provider: 'GOOGLE',
+			providerSubject: 'unlink-fixture',
+			verifiedAt: new Date(),
 		});
-		expect(logged.loginPhone.user._id).toBe(linked.user._id);
+
 		const removals = await Promise.all([
 			gql('mutation($id:ID!){unlinkAuthIdentity(authIdentityId:$id)}', { id: emailId }, linked.accessToken),
-			gql(
-				'mutation($id:ID!){unlinkAuthIdentity(authIdentityId:$id)}',
-				{ id: phone.linkPhone._id },
-				logged.loginPhone.accessToken,
-			),
+			gql('mutation($id:ID!){unlinkAuthIdentity(authIdentityId:$id)}', { id: social._id }, linked.accessToken),
 		]);
 		expect(removals.filter((result) => !result.errors)).toHaveLength(1);
 		expect(
@@ -255,12 +277,161 @@ describe('CreatorHub workflow', () => {
 		).toBe(0);
 	});
 
-	it('requires confirmation of linked email and does not count pending email as a usable method', async () => {
-		const phone = (
-			await ok('mutation($input:PhoneRegisterInput!){registerPhone(input:$input){accessToken user{_id}}}', {
-				input: { phoneNumber: '+821066667777', password: 'Phone-only-password-123', displayName: 'Linked Email' },
+	it('changes an email password only after owner and current-password checks, revoking all sessions and tokens', async () => {
+		const email = 'password-change@example.com';
+		const oldPassword = 'Portfolio-test-password-123';
+		const newPassword = 'Changed-email-password-456';
+		const member = await account(email);
+		const second = (
+			await ok('mutation($input:LoginInput!){login(input:$input){accessToken refreshToken}}', {
+				input: { email, password: oldPassword },
 			})
-		).registerPhone;
+		).login;
+		const identity = await db.model('AuthIdentity').findOne({ userId: member.user._id });
+		const mutation = 'mutation($input:ChangePasswordInput!){changePassword(input:$input)}';
+		const input = { authIdentityId: String(identity._id), currentPassword: oldPassword, password: newPassword };
+		expect((await gql(mutation, { input })).errors).toBeDefined();
+		expect((await gql(mutation, { input }, outsider.accessToken)).errors).toBeDefined();
+		expect(
+			(await gql(mutation, { input: { ...input, currentPassword: 'wrong-password' } }, member.accessToken)).errors[0]
+				.message,
+		).toBe('Current password is incorrect');
+		expect((await gql(mutation, { input: { ...input, password: 'short' } }, member.accessToken)).errors).toBeDefined();
+		expect(
+			(await gql(mutation, { input: { ...input, password: oldPassword } }, member.accessToken)).errors,
+		).toBeDefined();
+		expect((await ok('query{me{_id}}', {}, second.accessToken)).me._id).toBe(member.user._id);
+		await ok('mutation($input:EmailInput!){requestPasswordReset(input:$input)}', { input: { email } });
+		const resetToken = mail.get(`${email}:PASSWORD_RESET`);
+		expect((await ok(mutation, { input }, member.accessToken)).changePassword).toBe(true);
+		for (const login of [member, second]) {
+			expect((await gql('query{me{_id}}', {}, login.accessToken)).errors).toBeDefined();
+			expect(
+				(
+					await gql('mutation($token:String!){refreshSession(refreshToken:$token){accessToken}}', {
+						token: login.refreshToken,
+					})
+				).errors,
+			).toBeDefined();
+		}
+		expect(
+			(
+				await gql('mutation($input:ResetPasswordInput!){resetPassword(input:$input)}', {
+					input: { token: resetToken, password: 'Reset-after-change-password-1' },
+				})
+			).errors,
+		).toBeDefined();
+		expect(
+			(
+				await gql('mutation($input:LoginInput!){login(input:$input){accessToken}}', {
+					input: { email, password: oldPassword },
+				})
+			).errors,
+		).toBeDefined();
+		expect(
+			(
+				await ok('mutation($input:LoginInput!){login(input:$input){user{_id}}}', {
+					input: { email, password: newPassword },
+				})
+			).login.user._id,
+		).toBe(member.user._id);
+	});
+
+	it('lets a phone-only account change its own password without another linked method', async () => {
+		const phoneNumber = '+821099998877';
+		const oldPassword = 'Phone-current-password-123';
+		const newPassword = 'Phone-new-password-456';
+		const member = await legacyPhoneAccount(phoneNumber, oldPassword);
+		const identity = await db.model('AuthIdentity').findOne({ userId: member.user._id });
+		await ok(
+			'mutation($input:ChangePasswordInput!){changePassword(input:$input)}',
+			{
+				input: { authIdentityId: String(identity._id), currentPassword: oldPassword, password: newPassword },
+			},
+			member.accessToken,
+		);
+		expect((await gql('query{me{_id}}', {}, member.accessToken)).errors).toBeDefined();
+		expect(
+			(
+				await gql('mutation($input:PhoneLoginInput!){loginPhone(input:$input){accessToken}}', {
+					input: { phoneNumber, password: oldPassword },
+				})
+			).errors,
+		).toBeDefined();
+		expect(
+			(
+				await gql('mutation($input:PhoneLoginInput!){loginPhone(input:$input){user{_id}}}', {
+					input: { phoneNumber, password: newPassword },
+				})
+			).errors,
+		).toBeDefined();
+	});
+
+	it('does not change social, pending or revoked identities through the password-change API', async () => {
+		const member = await account('password-protected-identities@example.com');
+		const social = await db.model('AuthIdentity').create({
+			userId: member.user._id,
+			provider: 'GOOGLE',
+			providerSubject: 'password-test-google-subject',
+			verifiedAt: new Date(),
+		});
+		const pendingOwner = await legacyPhoneAccount('+821099996655', 'Phone-pending-owner-123');
+		const pending = (
+			await ok(
+				'mutation($input:LinkEmailInput!){linkEmail(input:$input){_id}}',
+				{ input: { email: 'pending-password@example.com', password: 'Pending-password-123' } },
+				pendingOwner.accessToken,
+			)
+		).linkEmail;
+		const revoked = await db.model('AuthIdentity').create({
+			userId: member.user._id,
+			provider: 'PHONE',
+			providerSubject: '+821099997766',
+			passwordHash: 'unused-hash',
+			revokedAt: new Date(),
+		});
+		for (const identity of [social, pending, revoked]) {
+			expect(
+				(
+					await gql(
+						'mutation($input:ChangePasswordInput!){changePassword(input:$input)}',
+						{
+							input: {
+								authIdentityId: String(identity._id),
+								currentPassword: 'Pending-password-123',
+								password: 'Replacement-password-456',
+							},
+						},
+						identity === pending ? pendingOwner.accessToken : member.accessToken,
+					)
+				).errors,
+			).toBeDefined();
+		}
+		expect((await ok('query{me{_id}}', {}, member.accessToken)).me._id).toBe(member.user._id);
+		expect((await db.model('AuthIdentity').findById(social._id).select('+passwordHash')).passwordHash).toBeUndefined();
+	});
+
+	it('accepts only one concurrent password change with the same old credential and session', async () => {
+		const member = await account('concurrent-password@example.com');
+		const identity = await db.model('AuthIdentity').findOne({ userId: member.user._id });
+		const mutation = 'mutation($input:ChangePasswordInput!){changePassword(input:$input)}';
+		const results = await Promise.all(
+			['Concurrent-new-password-1', 'Concurrent-new-password-2'].map((password) =>
+				gql(
+					mutation,
+					{
+						input: { authIdentityId: String(identity._id), currentPassword: 'Portfolio-test-password-123', password },
+					},
+					member.accessToken,
+				),
+			),
+		);
+		expect(results.filter((result) => result.data?.changePassword === true)).toHaveLength(1);
+		expect(results.filter((result) => result.errors)).toHaveLength(1);
+	});
+
+	it('requires confirmation of linked email and does not count pending email as a usable method', async () => {
+		const phone = await legacyPhoneAccount('+821066667777', 'Phone-only-password-123');
 		const linked = await ok(
 			'mutation($input:LinkEmailInput!){linkEmail(input:$input){_id verifiedAt}}',
 			{ input: { email: 'phone-linked@example.com', password: 'Email-link-password-123' } },
@@ -292,16 +463,20 @@ describe('CreatorHub workflow', () => {
 				input: { email: 'phone-linked@example.com', password: 'Email-link-password-123' },
 			})
 		).login;
-		expect(email.user._id).toBe(phone.user._id);
+		expect(email.user._id).toBe(String(phone.user._id));
 		await ok(
 			'mutation($input:ChangePhonePasswordInput!){changePhonePassword(input:$input)}',
 			{ input: { password: 'Changed-phone-password-123' } },
 			email.accessToken,
 		);
 		expect((await gql('query{me{_id}}', {}, phone.accessToken)).errors).toBeDefined();
-		await ok('mutation($input:PhoneLoginInput!){loginPhone(input:$input){accessToken}}', {
-			input: { phoneNumber: '+821066667777', password: 'Changed-phone-password-123' },
-		});
+		expect(
+			(
+				await gql('mutation($input:PhoneLoginInput!){loginPhone(input:$input){accessToken}}', {
+					input: { phoneNumber: '+821066667777', password: 'Changed-phone-password-123' },
+				})
+			).errors,
+		).toBeDefined();
 	});
 
 	it('routes verified social subjects to one account without creating local credentials', async () => {
@@ -313,9 +488,13 @@ describe('CreatorHub workflow', () => {
 				nonce: 'a'.repeat(64),
 				idToken: 'fixture-proof-verified-by-unit-tests',
 				displayName: 'Social Member',
+				phoneNumber: '+821023456789',
 			};
+			const { phoneNumber: _missing, ...missingContact } = input;
+			expect((await gql(operation, { input: missingContact })).errors).toBeDefined();
 			const first = (await ok(operation, { input })).loginSocial;
-			const second = (await ok(operation, { input })).loginSocial;
+			const { phoneNumber: _contact, ...loginInput } = input;
+			const second = (await ok(operation, { input: loginInput })).loginSocial;
 			expect(first.user._id).toBe(second.user._id);
 			expect(first.user.role).toBe('USER');
 			const identity = await db.model('AuthIdentity').findOne({ userId: first.user._id }).select('+passwordHash');
@@ -740,7 +919,7 @@ describe('CreatorHub workflow', () => {
 		expect(
 			(
 				await gql('mutation($input:ResetPasswordInput!){resetPassword(input:$input)}', {
-					input: { token: mail.get('outsider@example.com:PASSWORD_RESET'), password: 'A-new-password-for-tests' },
+					input: { token: mail.get('outsider@example.com:PASSWORD_RESET'), password: 'A-new-password-for-tests-1' },
 				})
 			).errors,
 		).toBeDefined();
@@ -778,6 +957,7 @@ describe('CreatorHub workflow', () => {
 				email: 'unverified@example.com',
 				password: 'Portfolio-test-password-123',
 				displayName: 'Unverified account',
+				phoneNumber: '+821023456789',
 			},
 		});
 		const token = registration.register.accessToken;
@@ -893,6 +1073,21 @@ describe('CreatorHub workflow', () => {
 
 	it('keeps notification reads private and separate from conversation read receipts', async () => {
 		const sent = await submit(await draft());
+		const alerts = await ok(
+			'{ getNotifications { list { event { inquiryId } } metaCounter { total } } getUnreadNotificationCount getUnreadInquiryCount }',
+			{},
+			creator.accessToken,
+		);
+		expect(alerts.getNotifications.list.every((item: any) => item.event === null)).toBe(true);
+		expect(alerts.getUnreadInquiryCount).toBeGreaterThan(0);
+		const activityFilter = { recipientId: new Types.ObjectId(creator.user._id), inquiryEventId: { $exists: false } };
+		expect(alerts.getUnreadNotificationCount).toBe(
+			await db.model('Notification').countDocuments({ ...activityFilter, readAt: { $exists: false } }),
+		);
+		expect(alerts.getNotifications.metaCounter[0]?.total || 0).toBe(
+			await db.model('Notification').countDocuments(activityFilter),
+		);
+
 		const response = await message(sent, creator.accessToken);
 		expect(response.errors).toBeUndefined();
 		const event = await db.model('InquiryEvent').findOne({ inquiryId: sent._id, type: 'MESSAGE_SENT' });
@@ -958,6 +1153,7 @@ describe('CreatorHub workflow', () => {
 						email: 'DELETED@EXAMPLE.COM',
 						password: 'Portfolio-test-password-123',
 						displayName: 'Duplicate deleted account',
+						phoneNumber: '+821023456789',
 					},
 				})
 			).errors,
@@ -974,6 +1170,18 @@ describe('CreatorHub workflow', () => {
 		]);
 		concurrent.forEach((result) => expect(result.errors).toBeUndefined());
 		expect(await db.model('CreatorFollow').countDocuments({ followerId: client.user._id, creatorId })).toBe(1);
+		const followersQuery = 'query{getMyFollowers{list{_id displayName avatarUrl} metaCounter{total}}}';
+		expect((await gql(followersQuery)).errors).toBeDefined();
+		const ownFollowers = (await ok(followersQuery, {}, creator.accessToken)).getMyFollowers;
+		expect(ownFollowers.list.map((member: any) => member._id)).toContain(client.user._id);
+		expect(Object.keys(ownFollowers.list[0]).sort()).toEqual(['_id', 'avatarUrl', 'displayName']);
+		const unrelated = await account('followers-unrelated@example.com');
+		expect((await ok(followersQuery, {}, unrelated.accessToken)).getMyFollowers.list).toEqual([]);
+		expect((await ok(followersQuery, {}, admin.accessToken)).getMyFollowers.list).toEqual([]);
+		await db.model('User').updateOne({ _id: client.user._id }, { status: 'SUSPENDED' });
+		expect((await ok(followersQuery, {}, creator.accessToken)).getMyFollowers.list).toEqual([]);
+		await db.model('User').updateOne({ _id: client.user._id }, { status: 'ACTIVE' });
+
 		expect(
 			await db
 				.model('ActivityEvent')

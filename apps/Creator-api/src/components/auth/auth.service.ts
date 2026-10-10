@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
@@ -16,6 +16,7 @@ import {
 	PhoneLoginInput,
 	SocialLoginInput,
 	ResetPasswordInput,
+	ChangePasswordInput,
 	LinkEmailInput,
 	LinkPhoneInput,
 } from '../../libs/dto/auth/auth.input';
@@ -88,18 +89,12 @@ export class AuthService {
 		return this.createSession(user, identity);
 	}
 
-	public async registerPhone(input: PhoneRegisterInput) {
-		const { user, identity } = await this.createAccount(
-			input,
-			AuthProvider.PHONE,
-			input.phoneNumber,
-			await this.hashPassword(input.password),
-		);
-		return this.createSession(user, identity);
+	public registerPhone(_input: PhoneRegisterInput) {
+		throw new BadRequestException('Phone signup is unavailable. Register with an email and a contact phone number.');
 	}
 
 	private async createAccount(
-		input: { displayName: string; preferredLocale?: User['preferredLocale'] },
+		input: { displayName: string; preferredLocale?: User['preferredLocale']; phoneNumber?: string },
 		provider: AuthProvider,
 		providerSubject: string,
 		passwordHash?: string,
@@ -107,7 +102,7 @@ export class AuthService {
 		try {
 			return await this.connection.transaction(async (session) => {
 				const [user] = await this.users.create(
-					[{ displayName: input.displayName, preferredLocale: input.preferredLocale }],
+					[{ displayName: input.displayName, preferredLocale: input.preferredLocale, phoneNumber: input.phoneNumber }],
 					{ session },
 				);
 				const [identity] = await this.identities.create(
@@ -136,8 +131,8 @@ export class AuthService {
 		return this.loginPassword(AuthProvider.EMAIL, input.email, input.password);
 	}
 
-	public loginPhone(input: PhoneLoginInput) {
-		return this.loginPassword(AuthProvider.PHONE, input.phoneNumber, input.password);
+	public loginPhone(_input: PhoneLoginInput) {
+		throw new BadRequestException('Phone login is unavailable. Sign in with your verified email.');
 	}
 
 	private async loginPassword(provider: AuthProvider, providerSubject: string, password: string) {
@@ -165,9 +160,10 @@ export class AuthService {
 			user = await this.activeUser(identity.userId);
 		} else {
 			if (!input.displayName) throw new ConflictException('Provide a display name to register with this provider');
+			if (!input.phoneNumber) throw new BadRequestException('Provide a contact phone number to register.');
 			try {
 				({ user, identity } = await this.createAccount(
-					{ displayName: input.displayName, preferredLocale: input.preferredLocale },
+					{ displayName: input.displayName, preferredLocale: input.preferredLocale, phoneNumber: input.phoneNumber },
 					input.provider,
 					subject,
 				));
@@ -393,9 +389,8 @@ export class AuthService {
 		return identity;
 	}
 
-	public async linkPhone(user: User, sessionId: string, input: LinkPhoneInput) {
-		await this.recentSession(user, sessionId);
-		return this.linkIdentity(user, AuthProvider.PHONE, input.phoneNumber, await this.hashPassword(input.password));
+	public linkPhone(_user: User, _sessionId: string, _input: LinkPhoneInput) {
+		throw new BadRequestException('Phone numbers are contact information and cannot be linked for login.');
 	}
 
 	public async beginSocialLink(user: User, sessionId: string, provider: AuthProvider) {
@@ -460,7 +455,8 @@ export class AuthService {
 					userId: user._id,
 					_id: { $ne: identity._id },
 					revokedAt: { $exists: false },
-					$or: [{ provider: AuthProvider.PHONE }, { verifiedAt: { $exists: true } }],
+					provider: { $ne: AuthProvider.PHONE },
+					verifiedAt: { $exists: true },
 				})
 				.session(session);
 			if (!remaining) throw new ConflictException('Keep at least one usable login method');
@@ -475,6 +471,47 @@ export class AuthService {
 				{ $set: { revokedAt: new Date() } },
 				{ session },
 			);
+		});
+		return true;
+	}
+
+	public async changePassword(user: User, sessionId: string, input: ChangePasswordInput) {
+		const passwordHash = await this.hashPassword(input.password);
+		await this.connection.transaction(async (session) => {
+			await this.lockAccount(user, session);
+			const currentSession = await this.sessions
+				.findOne({
+					_id: shapeIntoMongooseObjectId(sessionId),
+					userId: user._id,
+					revokedAt: { $exists: false },
+					expiresAt: { $gt: new Date() },
+				})
+				.session(session);
+			if (!currentSession) throw new UnauthorizedException('Sign in again before changing your password');
+			await this.requireUsable(
+				await this.identities
+					.findOne({
+						_id: currentSession.authIdentityId,
+						userId: user._id,
+					})
+					.session(session),
+			);
+			const identity = await this.identities
+				.findOne({
+					_id: shapeIntoMongooseObjectId(input.authIdentityId),
+					userId: user._id,
+					provider: { $in: [AuthProvider.EMAIL, AuthProvider.PHONE] },
+					revokedAt: { $exists: false },
+				})
+				.select('+passwordHash')
+				.session(session);
+			await this.requireUsable(identity);
+			if (!identity?.passwordHash) throw new UnauthorizedException('Password login unavailable');
+			if (!(await this.comparePasswords(input.currentPassword, identity.passwordHash)))
+				throw new BadRequestException('Current password is incorrect');
+			if (input.currentPassword === input.password) throw new BadRequestException('Choose a different new password');
+			await this.identities.updateOne({ _id: identity._id }, { $set: { passwordHash } }, { session });
+			await this.revokeAll(user._id, session);
 		});
 		return true;
 	}

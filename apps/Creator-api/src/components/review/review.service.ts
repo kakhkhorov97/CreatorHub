@@ -106,6 +106,12 @@ export class ReviewService {
 			.limit(100);
 	}
 
+	async pendingCount(user: User) {
+		requireActive(user);
+		requireAdmin(user);
+		return this.reviews.countDocuments({ status: 'PENDING' });
+	}
+
 	async decide(user: User, id: string, approve: boolean, revision: Date, reason?: string) {
 		requireActive(user);
 		requireAdmin(user);

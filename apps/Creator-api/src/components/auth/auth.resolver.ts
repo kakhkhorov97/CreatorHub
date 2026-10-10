@@ -9,6 +9,7 @@ import {
 	LinkEmailInput,
 	LinkPhoneInput,
 	ChangePhonePasswordInput,
+	ChangePasswordInput,
 	LoginInput,
 	RegisterInput,
 	ResetPasswordInput,
@@ -123,6 +124,12 @@ export class AuthResolver {
 		@Args('authIdentityId', { type: () => ID }) id: string,
 	) {
 		return this.auth.unlinkIdentity(user, sessionId, id);
+	}
+
+	@UseGuards(AuthGuard)
+	@Mutation(() => Boolean)
+	changePassword(@AuthMember() user: User, @SessionId() sessionId: string, @Args('input') input: ChangePasswordInput) {
+		return this.auth.changePassword(user, sessionId, input);
 	}
 
 	@UseGuards(AuthGuard)

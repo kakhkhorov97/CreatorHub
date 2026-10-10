@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Mutation, Query, ResolveField, Resolver } from '@nestjs/graphql';
+import { Args, ID, Int, Mutation, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { Parent } from '@nestjs/graphql';
 import { ContentReview } from '../../libs/dto/review/content-review';
 import { User } from '../../libs/dto/user/user';
@@ -20,6 +20,11 @@ export class ReviewResolver {
 	@Query(() => [ContentReview])
 	adminContentReviews(@AuthMember() user: User, @Args('status', { defaultValue: 'PENDING' }) status: string) {
 		return this.reviews.list(user, status);
+	}
+
+	@Query(() => Int)
+	adminPendingContentReviewCount(@AuthMember() user: User) {
+		return this.reviews.pendingCount(user);
 	}
 
 	@Mutation(() => ContentReview)

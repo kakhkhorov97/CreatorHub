@@ -28,9 +28,9 @@ describe('Direct inquiries and verified customer feedback', () => {
 		expect(result.errors).toBeUndefined();
 		return result.data;
 	}
-	async function account(email: string, password = 'abcdef') {
+	async function account(email: string, password = 'Feedback7!') {
 		const data = await ok('mutation($input:RegisterInput!){register(input:$input){accessToken user{_id}}}', {
-			input: { email, password, displayName: 'Test Customer' },
+			input: { email, password, displayName: 'Test Customer', phoneNumber: '+821023456789' },
 		});
 		await ok('mutation($token:String!){verifyEmail(token:$token)}', { token: mail.get(email) });
 		return data.register;
@@ -134,17 +134,30 @@ describe('Direct inquiries and verified customer feedback', () => {
 		).toBeDefined();
 	});
 	it('enforces password bounds on new credentials and retains the same account on creator onboarding', async () => {
-		for (const password of ['12345', 'x'.repeat(31)])
+		for (const password of [
+			'12345',
+			'x'.repeat(31),
+			'LettersOnly',
+			'Letters123',
+			'Letters!Only',
+			'12345!',
+			'Letters123 ',
+		])
 			expect(
 				(
 					await gql('mutation($input:RegisterInput!){register(input:$input){accessToken}}', {
-						input: { email: randomUUID() + '@example.com', password, displayName: 'Customer' },
+						input: {
+							email: randomUUID() + '@example.com',
+							password,
+							displayName: 'Customer',
+							phoneNumber: '+821023456789',
+						},
 					})
 				).errors,
 			).toBeDefined();
-		const unicode = await account('unicode-feedback@example.com', '한'.repeat(30));
+		const unicode = await account('unicode-feedback@example.com', '한'.repeat(28) + '1!');
 		await ok('mutation($input:LoginInput!){login(input:$input){accessToken}}', {
-			input: { email: 'unicode-feedback@example.com', password: '한'.repeat(30) },
+			input: { email: 'unicode-feedback@example.com', password: '한'.repeat(28) + '1!' },
 		});
 		expect(unicode.user._id).toBeTruthy();
 		const before = await db.model('User').countDocuments();

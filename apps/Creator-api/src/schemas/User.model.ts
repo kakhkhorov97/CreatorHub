@@ -13,6 +13,12 @@ const UserSchema = new Schema(
 			maxlength: 60,
 		},
 
+		phoneNumber: {
+			type: String,
+			required: false,
+			select: false,
+		},
+
 		avatarUrl: {
 			type: String,
 			required: false,

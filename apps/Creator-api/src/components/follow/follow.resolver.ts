@@ -1,4 +1,4 @@
-import { Followings } from '../../libs/dto/follow/creator-follow';
+import { Followings, Followers } from '../../libs/dto/follow/creator-follow';
 
 import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
@@ -27,5 +27,11 @@ export class FollowResolver {
 	@Query(() => Followings)
 	public getMyFollows(@AuthMember() currentUser: User, @Args('input', { defaultValue: {} }) input: PageInput) {
 		return this.followService.getMyFollows(currentUser, input);
+	}
+
+	@UseGuards(AuthGuard)
+	@Query(() => Followers)
+	public getMyFollowers(@AuthMember() currentUser: User, @Args('input', { defaultValue: {} }) input: PageInput) {
+		return this.followService.getMyFollowers(currentUser, input);
 	}
 }

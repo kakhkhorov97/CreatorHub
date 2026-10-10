@@ -1,3 +1,16 @@
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
+import {
+	RegisterInput,
+	PhoneRegisterInput,
+	ResetPasswordInput,
+	LinkEmailInput,
+	LinkPhoneInput,
+	ChangePasswordInput,
+	ChangePhonePasswordInput,
+	LoginInput,
+	PhoneLoginInput,
+} from '../src/libs/dto/auth/auth.input';
 import { scryptSync } from 'node:crypto';
 import { AuthService } from '../src/components/auth/auth.service';
 
@@ -25,5 +38,42 @@ describe('Password compatibility', () => {
 		expect(
 			await auth.comparePasswords('한'.repeat(25), '$2b$12$7/0tvqV1smdYFNsU4wkRFuTvsPH3d5xtjvt6SRj2a0OSV/JdlReJu'),
 		).toBe(false);
+	});
+});
+
+describe('New password policy', () => {
+	const credentialInputs = [
+		RegisterInput,
+		PhoneRegisterInput,
+		ResetPasswordInput,
+		LinkEmailInput,
+		LinkPhoneInput,
+		ChangePasswordInput,
+		ChangePhonePasswordInput,
+	];
+	function passwordErrors(type: any, password: string) {
+		return validateSync(plainToInstance(type, { password })).filter((error) => error.property === 'password');
+	}
+	it.each(credentialInputs.map((type) => [type.name, type] as const))(
+		'%s requires every character class',
+		(_name, type) => {
+			for (const password of ['LettersOnly', 'Letters123', 'Letters!Only', '123456!', 'Letters123 ', 'Letters123\t']) {
+				expect(passwordErrors(type, password)).not.toHaveLength(0);
+			}
+		},
+	);
+	it.each(credentialInputs.map((type) => [type.name, type] as const))(
+		'%s accepts symbols and Unicode letters within the length bounds',
+		(_name, type) => {
+			for (const password of ['River7!Cloud', 'abc1!x', '한'.repeat(28) + '1!', 'alpha7-omega', 'alpha7🙂']) {
+				expect(passwordErrors(type, password)).toHaveLength(0);
+			}
+			for (const password of ['Ab1!x', 'a'.repeat(29) + '1!']) {
+				expect(passwordErrors(type, password)).not.toHaveLength(0);
+			}
+		},
+	);
+	it.each([LoginInput, PhoneLoginInput])('keeps existing passwords usable for %p', (type) => {
+		expect(passwordErrors(type, 'abcdef')).toHaveLength(0);
 	});
 });

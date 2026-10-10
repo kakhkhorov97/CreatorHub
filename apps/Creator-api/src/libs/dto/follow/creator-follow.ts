@@ -26,3 +26,24 @@ export class Followings {
 	@Field(() => [MetaCounter])
 	metaCounter!: MetaCounter[];
 }
+
+@ObjectType()
+export class FollowerIdentity {
+	@Field(() => ID)
+	_id!: Types.ObjectId;
+
+	@Field(() => String)
+	displayName!: string;
+
+	@Field(() => String, { nullable: true })
+	avatarUrl?: string;
+}
+
+@ObjectType()
+export class Followers {
+	@Field(() => [FollowerIdentity])
+	list!: FollowerIdentity[];
+
+	@Field(() => [MetaCounter])
+	metaCounter!: MetaCounter[];
+}

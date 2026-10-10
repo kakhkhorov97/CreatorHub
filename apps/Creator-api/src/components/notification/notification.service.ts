@@ -21,7 +21,11 @@ export class NotificationService {
 	public async getNotifications(currentUser: User, input: PageInput, unreadOnly: boolean) {
 		const { offset, limit } = page(input);
 		const notifications = await this.notificationModel
-			.find({ recipientId: currentUser._id, ...(unreadOnly ? { readAt: { $exists: false } } : {}) })
+			.find({
+				recipientId: currentUser._id,
+				inquiryEventId: { $exists: false },
+				...(unreadOnly ? { readAt: { $exists: false } } : {}),
+			})
 			.sort({ createdAt: -1, _id: -1 })
 			.skip(offset)
 			.limit(limit)
@@ -42,13 +46,18 @@ export class NotificationService {
 		);
 		const total = await this.notificationModel.countDocuments({
 			recipientId: currentUser._id,
+			inquiryEventId: { $exists: false },
 			...(unreadOnly ? { readAt: { $exists: false } } : {}),
 		});
 		return { list, metaCounter: total ? [{ total }] : [] };
 	}
 
 	public getUnreadCount(currentUser: User) {
-		return this.notificationModel.countDocuments({ recipientId: currentUser._id, readAt: { $exists: false } });
+		return this.notificationModel.countDocuments({
+			recipientId: currentUser._id,
+			inquiryEventId: { $exists: false },
+			readAt: { $exists: false },
+		});
 	}
 
 	public async markRead(currentUser: User, id: string) {

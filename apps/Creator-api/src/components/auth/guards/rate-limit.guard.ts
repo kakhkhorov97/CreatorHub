@@ -24,6 +24,7 @@ const accountChanges = new Set([
 	'linkPhone',
 	'unlinkAuthIdentity',
 	'changePhonePassword',
+	'changePassword',
 ]);
 
 @Injectable()

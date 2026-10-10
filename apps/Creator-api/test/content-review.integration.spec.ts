@@ -2,7 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { Connection } from 'mongoose';
+import { Connection, Types } from 'mongoose';
 import request from 'supertest';
 import { MailService } from '../src/components/auth/mail.service';
 
@@ -28,7 +28,7 @@ describe('Manual content approval', () => {
 	}
 	async function account(email: string) {
 		const data = await ok('mutation($input:RegisterInput!){register(input:$input){accessToken user{_id}}}', {
-			input: { email, password: 'Review-test-password-123', displayName: 'Review test' },
+			input: { email, password: 'Review-test-password-123', displayName: 'Review test', phoneNumber: '+821023456789' },
 		});
 		await ok('mutation($token:String!){verifyEmail(token:$token)}', { token: mail.get(email) });
 		return data.register;
@@ -91,6 +91,17 @@ describe('Manual content approval', () => {
 		expect((await gql('query{creator(slug:"review-studio"){_id}}')).errors).toBeDefined();
 		const [review] = await reviews();
 		expect(review.status).toBe('PENDING');
+		expect((await gql('query{adminPendingContentReviewCount}')).errors).toBeDefined();
+		expect((await gql('query{adminPendingContentReviewCount}', {}, outsider.accessToken)).errors).toBeDefined();
+		expect(
+			(await ok('query{adminPendingContentReviewCount}', {}, admin.accessToken)).adminPendingContentReviewCount,
+		).toBe(1);
+		await ok('mutation{setCreatorProfileStatus(status:PUBLISHED){status}}', {}, creator.accessToken);
+		expect(
+			(await ok('query{adminPendingContentReviewCount}', {}, admin.accessToken)).adminPendingContentReviewCount,
+		).toBe(1);
+		const [resubmitted] = await reviews();
+		Object.assign(review, resubmitted);
 		expect((await gql('query{adminContentReviews{_id}}', {}, outsider.accessToken)).errors).toBeDefined();
 		expect((await ok('query{myContentReviews{_id}}', {}, outsider.accessToken)).myContentReviews).toEqual([]);
 		expect(
@@ -103,6 +114,9 @@ describe('Manual content approval', () => {
 			).errors,
 		).toBeDefined();
 		await decide(review, true);
+		expect(
+			(await ok('query{adminPendingContentReviewCount}', {}, admin.accessToken)).adminPendingContentReviewCount,
+		).toBe(0);
 		expect((await ok('query{creator(slug:"review-studio"){city}}')).creator.city).toBe('gwangju');
 		expect((await ok('query{me{role}}', {}, creator.accessToken)).me.role).toBe('CREATOR');
 	});
@@ -126,6 +140,9 @@ describe('Manual content approval', () => {
 			).errors,
 		).toBeDefined();
 		await decide(review, false, 'Please revise the submitted content.');
+		expect(
+			(await ok('query{adminPendingContentReviewCount}', {}, admin.accessToken)).adminPendingContentReviewCount,
+		).toBe(0);
 		expect((await reviews())[0].reason).toContain('Please revise');
 		expect((await ok('query{creator(slug:"review-studio"){headline}}')).creator.headline).toBe('Korean design studio');
 	});
@@ -255,5 +272,32 @@ describe('Manual content approval', () => {
 		await db.model('CreatorProfile').updateOne({ _id: profileId }, { $set: { city: 'london' } });
 		expect((await gql('query{creator(slug:"review-studio"){_id}}')).errors).toBeDefined();
 		expect((await ok('query{getProjects(input:{}){list{_id}}}')).getProjects.list).toEqual([]);
+	});
+	it('counts all pending submissions beyond the queue limit and excludes reviewed submissions', async () => {
+		const baseline = (await ok('query{adminPendingContentReviewCount}', {}, admin.accessToken))
+			.adminPendingContentReviewCount;
+		const ids = Array.from({ length: 105 }, () => new Types.ObjectId());
+		try {
+			await db.model('ContentReview').insertMany(
+				ids.map((_id, index) => ({
+					_id,
+					kind: 'PROFILE',
+					targetId: new Types.ObjectId(),
+					ownerId: creator.user._id,
+					title: 'Disposable count fixture',
+					snapshot: { headline: 'Count fixture' },
+					baseUpdatedAt: new Date(),
+					status: index < 103 ? 'PENDING' : index === 103 ? 'APPROVED' : 'REJECTED',
+				})),
+			);
+			expect(
+				(await ok('query{adminPendingContentReviewCount}', {}, admin.accessToken)).adminPendingContentReviewCount,
+			).toBe(baseline + 103);
+			expect((await ok('query{adminContentReviews{_id}}', {}, admin.accessToken)).adminContentReviews).toHaveLength(
+				100,
+			);
+		} finally {
+			await db.model('ContentReview').deleteMany({ _id: { $in: ids } });
+		}
 	});
 });
