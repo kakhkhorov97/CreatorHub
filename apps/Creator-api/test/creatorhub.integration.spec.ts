@@ -124,6 +124,7 @@ describe('CreatorHub workflow', () => {
 			binary: { version: '7.0.24', downloadDir: '.local/mongodb' },
 		});
 		process.env.NODE_ENV = 'test';
+		process.env.GOOGLE_CLIENT_ID = 'disposable-google-client';
 		uploadDirectory = await mkdtemp(join(tmpdir(), 'creatorhub-uploads-'));
 		process.env.UPLOAD_DIR = uploadDirectory;
 		process.env.UPLOAD_BASE_URL = 'http://localhost:7001/uploads';
@@ -275,6 +276,160 @@ describe('CreatorHub workflow', () => {
 		expect(
 			await db.model('AuthSession').countDocuments({ authIdentityId: removed._id, revokedAt: { $exists: false } }),
 		).toBe(0);
+	});
+
+	it('keeps one email and rejects adding or removing an email even with a social login', async () => {
+		const member = await account('single-email@example.com');
+		await db.model('AuthIdentity').create({
+			userId: member.user._id,
+			provider: 'GOOGLE',
+			providerSubject: 'single-email-social',
+			verifiedAt: new Date(),
+		});
+		const identity = await db.model('AuthIdentity').findOne({ userId: member.user._id, provider: 'EMAIL' });
+		for (const email of ['single-email@example.com', 'second-email@example.com']) {
+			expect(
+				(
+					await gql(
+						'mutation($input:LinkEmailInput!){linkEmail(input:$input){_id}}',
+						{ input: { email, password: 'Second-password-123' } },
+						member.accessToken,
+					)
+				).errors[0].message,
+			).toContain('Use Change email');
+		}
+		expect(
+			(
+				await gql(
+					'mutation($id:ID!){unlinkAuthIdentity(authIdentityId:$id)}',
+					{ id: String(identity._id) },
+					member.accessToken,
+				)
+			).errors[0].message,
+		).toContain('Use Change email');
+		expect(await db.model('AuthIdentity').countDocuments({ userId: member.user._id, provider: 'EMAIL' })).toBe(1);
+	});
+
+	it('requires authentication, a recent session and the correct current password to request an email change', async () => {
+		const member = await account('email-change-guards@example.com');
+		const mutation = 'mutation($input:ChangeEmailInput!){requestEmailChange(input:$input)}';
+		const input = { email: 'replacement-guards@example.com', currentPassword: 'Portfolio-test-password-123' };
+		expect((await gql(mutation, { input })).errors).toBeDefined();
+		expect(
+			(await gql(mutation, { input: { ...input, currentPassword: 'wrong' } }, member.accessToken)).errors[0].message,
+		).toBe('Current password is incorrect');
+		expect(
+			(await gql(mutation, { input: { ...input, email: 'client@example.com' } }, member.accessToken)).errors[0].message,
+		).toContain('already belongs');
+		expect(
+			(await gql(mutation, { input: { ...input, email: 'email-change-guards@example.com' } }, member.accessToken))
+				.errors[0].message,
+		).toContain('different email');
+		await db
+			.model('AuthSession')
+			.collection.updateMany(
+				{ userId: new Types.ObjectId(member.user._id) },
+				{ $set: { createdAt: new Date(Date.now() - 11 * 60000) } },
+			);
+		expect((await gql(mutation, { input }, member.accessToken)).errors[0].message).toContain('Sign in again');
+		expect(mail.has('replacement-guards@example.com:EMAIL_CHANGE')).toBe(false);
+	});
+
+	it('changes the same email identity only on confirmation and revokes sessions and old reset tokens', async () => {
+		const email = 'email-change-original@example.com';
+		const replacement = 'email-change-new@example.com';
+		const member = await account(email);
+		const identity = await db.model('AuthIdentity').findOne({ userId: member.user._id, provider: 'EMAIL' });
+		await ok('mutation($input:EmailInput!){requestPasswordReset(input:$input)}', { input: { email } });
+		const reset = mail.get(`${email}:PASSWORD_RESET`);
+		await ok(
+			'mutation($input:ChangeEmailInput!){requestEmailChange(input:$input)}',
+			{ input: { email: '  EMAIL-CHANGE-NEW@EXAMPLE.COM ', currentPassword: 'Portfolio-test-password-123' } },
+			member.accessToken,
+		);
+		expect((await db.model('AuthIdentity').findById(identity._id)).providerSubject).toBe(email);
+		const otherSession = (
+			await ok('mutation($input:LoginInput!){login(input:$input){accessToken refreshToken}}', {
+				input: { email, password: 'Portfolio-test-password-123' },
+			})
+		).login;
+		const token = mail.get(`${replacement}:EMAIL_CHANGE`);
+		expect(
+			(
+				await gql('mutation($input:ResetPasswordInput!){resetPassword(input:$input)}', {
+					input: { token, password: 'Invalid-reset-password-123' },
+				})
+			).errors,
+		).toBeDefined();
+		await ok('mutation($token:String!){verifyEmail(token:$token)}', { token });
+		// A login started before confirmation cannot create a fresh session using the stale email.
+		const user = await db.model('User').findById(member.user._id);
+		await expect((app.get(AuthService) as any).createSession(user, identity)).rejects.toThrow('Login method changed');
+		const changed = await db.model('AuthIdentity').findById(identity._id);
+		expect(changed.providerSubject).toBe(replacement);
+		expect(String(changed.userId)).toBe(member.user._id);
+		expect(await db.model('AuthIdentity').countDocuments({ userId: member.user._id, provider: 'EMAIL' })).toBe(1);
+		for (const session of [member, otherSession]) {
+			expect((await gql('query{getMyAuthIdentities{_id}}', {}, session.accessToken)).errors).toBeDefined();
+			expect(
+				(
+					await gql('mutation($token:String!){refreshSession(refreshToken:$token){accessToken}}', {
+						token: session.refreshToken,
+					})
+				).errors,
+			).toBeDefined();
+		}
+		expect(
+			(
+				await gql('mutation($input:ResetPasswordInput!){resetPassword(input:$input)}', {
+					input: { token: reset, password: 'Invalid-reset-password-123' },
+				})
+			).errors,
+		).toBeDefined();
+		expect((await gql('mutation($token:String!){verifyEmail(token:$token)}', { token })).errors).toBeDefined();
+		expect(
+			(
+				await gql('mutation($input:LoginInput!){login(input:$input){accessToken}}', {
+					input: { email, password: 'Portfolio-test-password-123' },
+				})
+			).errors,
+		).toBeDefined();
+		await ok('mutation($input:LoginInput!){login(input:$input){user{_id}}}', {
+			input: { email: replacement, password: 'Portfolio-test-password-123' },
+		});
+	});
+
+	it('rejects superseded, expired and newly occupied replacement links without changing the original email', async () => {
+		const email = 'email-change-recovery@example.com';
+		const member = await account(email);
+		const mutation = 'mutation($input:ChangeEmailInput!){requestEmailChange(input:$input)}';
+		const requestChange = (replacement: string) =>
+			ok(
+				mutation,
+				{ input: { email: replacement, currentPassword: 'Portfolio-test-password-123' } },
+				member.accessToken,
+			);
+		const verify = (token: string) => gql('mutation($token:String!){verifyEmail(token:$token)}', { token });
+		await requestChange('email-change-first@example.com');
+		const first = mail.get('email-change-first@example.com:EMAIL_CHANGE')!;
+		await requestChange('email-change-expired@example.com');
+		expect((await verify(first)).errors).toBeDefined();
+		await db
+			.model('AuthToken')
+			.updateMany(
+				{ purpose: 'EMAIL_CHANGE', revokedAt: { $exists: false } },
+				{ $set: { expiresAt: new Date(Date.now() - 1000) } },
+			);
+		expect((await verify(mail.get('email-change-expired@example.com:EMAIL_CHANGE')!)).errors).toBeDefined();
+		await requestChange('email-change-occupied@example.com');
+		await account('email-change-occupied@example.com');
+		expect((await verify(mail.get('email-change-occupied@example.com:EMAIL_CHANGE')!)).errors[0].message).toContain(
+			'already belongs',
+		);
+		expect(
+			(await db.model('AuthIdentity').findOne({ userId: member.user._id, provider: 'EMAIL' })).providerSubject,
+		).toBe(email);
+		await ok('query{getMyAuthIdentities{_id}}', {}, member.accessToken);
 	});
 
 	it('changes an email password only after owner and current-password checks, revoking all sessions and tokens', async () => {
@@ -507,6 +662,48 @@ describe('CreatorHub workflow', () => {
 		}
 	});
 
+	it('completes Google signup with a private contact number, then logs into the same account without onboarding', async () => {
+		const social = app.get(SocialAuthService);
+		const verifier = jest
+			.spyOn(social, 'verifyProfile')
+			.mockResolvedValue({ subject: 'google-onboarding-fixture', displayName: 'Google Member' });
+		const login =
+			'mutation($input:GoogleLoginInput!){loginGoogle(input:$input){signupToken displayName session{accessToken user{_id role}}}}';
+		const input = { nonce: 'a'.repeat(64), idToken: 'signed-fixture' };
+		const complete =
+			'mutation($input:CompleteGoogleSignupInput!){completeGoogleSignup(input:$input){accessToken refreshToken user{_id displayName role}}}';
+		try {
+			const first = (await ok(login, { input })).loginGoogle;
+			const parallel = (await ok(login, { input })).loginGoogle;
+			expect(first.session).toBeNull();
+			expect(first.displayName).toBe('Google Member');
+			const signup = { signupToken: first.signupToken, displayName: 'Google Member', phoneNumber: '+821023456789' };
+			expect(
+				(await gql(complete, { input: { signupToken: first.signupToken, displayName: 'Google Member' } })).errors,
+			).toBeDefined();
+			expect((await gql(complete, { input: { ...signup, phoneNumber: 'invalid' } })).errors).toBeDefined();
+			const session = (await ok(complete, { input: signup })).completeGoogleSignup;
+			expect(session.user.role).toBe('USER');
+			await ok('query{me{_id}}', {}, session.accessToken);
+			expect((await db.model('User').findById(session.user._id).select('+phoneNumber')).phoneNumber).toBe(
+				signup.phoneNumber,
+			);
+			expect((await gql(complete, { input: signup })).errors).toBeDefined();
+			const duplicate = (await ok(complete, { input: { ...signup, signupToken: parallel.signupToken } }))
+				.completeGoogleSignup;
+			expect(duplicate.user._id).toBe(session.user._id);
+			const returning = (await ok(login, { input })).loginGoogle;
+			expect(returning.signupToken).toBeNull();
+			expect(returning.session.user._id).toBe(session.user._id);
+			const identity = await db.model('AuthIdentity').findOne({ userId: session.user._id }).select('+passwordHash');
+			expect(identity.provider).toBe('GOOGLE');
+			expect(identity.passwordHash).toBeUndefined();
+			await db.model('User').updateOne({ _id: session.user._id }, { $set: { status: 'SUSPENDED' } });
+			expect((await gql(login, { input })).errors).toBeDefined();
+		} finally {
+			verifier.mockRestore();
+		}
+	});
 	it('creates a category and a creator draft, validates publication, and enforces ownership', async () => {
 		const category = await ok(
 			'mutation($input:CategoryInput!){createCategory(input:$input){_id}}',

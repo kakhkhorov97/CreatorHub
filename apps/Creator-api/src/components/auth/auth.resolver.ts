@@ -1,7 +1,9 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthPayload } from '../../libs/dto/auth/auth-payload';
+import { AuthPayload, GoogleSignInResult } from '../../libs/dto/auth/auth-payload';
 import {
+	GoogleLoginInput,
+	CompleteGoogleSignupInput,
 	PhoneRegisterInput,
 	PhoneLoginInput,
 	SocialLoginInput,
@@ -46,6 +48,16 @@ export class AuthResolver {
 	@Mutation(() => String)
 	beginSocialLogin(@Args('provider', { type: () => AuthProvider }) provider: AuthProvider) {
 		return this.auth.beginSocialLogin(provider);
+	}
+
+	@Mutation(() => GoogleSignInResult)
+	loginGoogle(@Args('input') input: GoogleLoginInput) {
+		return this.auth.loginGoogle(input);
+	}
+
+	@Mutation(() => AuthPayload)
+	completeGoogleSignup(@Args('input') input: CompleteGoogleSignupInput) {
+		return this.auth.completeGoogleSignup(input);
 	}
 
 	@Mutation(() => AuthPayload)

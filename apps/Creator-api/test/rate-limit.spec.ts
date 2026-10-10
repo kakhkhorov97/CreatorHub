@@ -57,6 +57,13 @@ describe('GraphQL rate limits', () => {
 		await expect(guard.canActivate(context('getProjects', impostor))).rejects.toMatchObject({ status: 429 });
 	});
 
+	it('limits email replacement requests with other account-security actions', async () => {
+		const token = jwt.sign({ sub: userA });
+		for (let n = 0; n < 20; n++) await guard.canActivate(context('requestEmailChange', token));
+		await expect(guard.canActivate(context('requestEmailChange', token))).rejects.toMatchObject({ status: 429 });
+		await expect(guard.canActivate(context('getMyAuthIdentities', token))).resolves.toBe(true);
+	});
+
 	it('resets expired windows and returns the remaining wait', async () => {
 		for (let n = 0; n < 10; n++) await guard.canActivate(context('login'));
 		jest.advanceTimersByTime(15000);

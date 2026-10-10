@@ -75,4 +75,32 @@ describe('Social provider token verification', () => {
 		const unconfigured = new SocialAuthService(new ConfigService({}));
 		expect(() => unconfigured.begin(AuthProvider.KAKAO)).toThrow('KAKAO login is not configured');
 	});
+	it('returns only verified profile data and keeps signup tickets single-use and separate from login nonces', async () => {
+		const nonce = service.begin(AuthProvider.GOOGLE);
+		const profile = await service.verifyProfile({
+			provider: AuthProvider.GOOGLE,
+			nonce,
+			idToken: token(nonce, { name: 'Google Test Member' }),
+		});
+		expect(profile).toEqual({ subject: 'provider-owned-subject', displayName: 'Google Test Member' });
+		const ticket = service.prepareGoogleSignup(profile);
+		expect(service.consumeGoogleSignup(ticket)).toEqual(profile);
+		expect(() => service.consumeGoogleSignup(ticket)).toThrow('Google signup expired');
+		const other = service.prepareGoogleSignup(profile);
+		await expect(
+			service.verify({ provider: AuthProvider.GOOGLE, nonce: other, idToken: token(other) }),
+		).rejects.toThrow('Start a new social sign-in');
+	});
+
+	it('rejects expired Google signup tickets and ordinary login nonces as signup tickets', () => {
+		const nonce = service.begin(AuthProvider.GOOGLE);
+		expect(() => service.consumeGoogleSignup(nonce)).toThrow('Google signup expired');
+		const ticket = service.prepareGoogleSignup({ subject: 'verified-subject' });
+		const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 11 * 60000);
+		try {
+			expect(() => service.consumeGoogleSignup(ticket)).toThrow('Google signup expired');
+		} finally {
+			clock.mockRestore();
+		}
+	});
 });

@@ -10,6 +10,8 @@ import { AuthIdentity } from '../../libs/dto/auth/auth-identity';
 import { AuthSession } from '../../libs/dto/auth/auth-session';
 import { AuthToken } from '../../libs/dto/auth/auth-token';
 import {
+	GoogleLoginInput,
+	CompleteGoogleSignupInput,
 	LoginInput,
 	RegisterInput,
 	PhoneRegisterInput,
@@ -152,6 +154,37 @@ export class AuthService {
 		return this.social.begin(provider);
 	}
 
+	public async loginGoogle(input: GoogleLoginInput) {
+		const profile = await this.social.verifyProfile({ ...input, provider: AuthProvider.GOOGLE });
+		const identity = await this.identities.findOne({ provider: AuthProvider.GOOGLE, providerSubject: profile.subject });
+		if (identity) {
+			await this.requireUsable(identity);
+			const user = await this.activeUser(identity.userId);
+			await this.recordLogin(user, identity);
+			return { session: await this.createSession(user, identity) };
+		}
+		return { signupToken: this.social.prepareGoogleSignup(profile), displayName: profile.displayName };
+	}
+
+	public async completeGoogleSignup(input: CompleteGoogleSignupInput) {
+		const profile = this.social.consumeGoogleSignup(input.signupToken);
+		let account: { user: User; identity: AuthIdentity };
+		try {
+			account = await this.createAccount(input, AuthProvider.GOOGLE, profile.subject);
+		} catch (error) {
+			if (!(error instanceof ConflictException)) throw error;
+			const identity = await this.identities.findOne({
+				provider: AuthProvider.GOOGLE,
+				providerSubject: profile.subject,
+			});
+			if (!identity) throw error;
+			await this.requireUsable(identity);
+			account = { identity, user: await this.activeUser(identity.userId) };
+		}
+		await this.recordLogin(account.user, account.identity);
+		return this.createSession(account.user, account.identity);
+	}
+
 	public async loginSocial(input: SocialLoginInput) {
 		const subject = await this.social.verify(input);
 		let identity = await this.identities.findOne({ provider: input.provider, providerSubject: subject });
@@ -199,13 +232,30 @@ export class AuthService {
 
 	private async createSession(user: User, identity: AuthIdentity) {
 		const refreshToken = newToken();
-		const session = await this.sessions.create({
-			userId: user._id,
-			authIdentityId: identity._id,
-			refreshTokenHash: tokenHash(refreshToken),
-			expiresAt: new Date(Date.now() + 30 * 86400000),
+		return this.connection.transaction(async (transaction) => {
+			await this.lockAccount(user, transaction);
+			const current = await this.identities
+				.exists({
+					_id: identity._id,
+					userId: user._id,
+					providerSubject: identity.providerSubject,
+					revokedAt: { $exists: false },
+				})
+				.session(transaction);
+			if (!current) throw new UnauthorizedException('Login method changed. Sign in again.');
+			const [session] = await this.sessions.create(
+				[
+					{
+						userId: user._id,
+						authIdentityId: identity._id,
+						refreshTokenHash: tokenHash(refreshToken),
+						expiresAt: new Date(Date.now() + 30 * 86400000),
+					},
+				],
+				{ session: transaction },
+			);
+			return this.payload(user, session, refreshToken);
 		});
-		return this.payload(user, session, refreshToken);
 	}
 
 	private async payload(user: User, session: AuthSession, refreshToken: string) {

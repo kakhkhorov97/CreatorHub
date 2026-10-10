@@ -25,7 +25,10 @@ const providers = {
 
 @Injectable()
 export class SocialAuthService {
-	private readonly challenges = new Map<string, { provider: AuthProvider; expiresAt: number; userId?: string }>();
+	private readonly challenges = new Map<
+		string,
+		{ provider: AuthProvider; expiresAt: number; userId?: string; subject?: string; displayName?: string }
+	>();
 
 	constructor(private readonly config: ConfigService) {}
 
@@ -46,12 +49,34 @@ export class SocialAuthService {
 		return nonce;
 	}
 
+	public prepareGoogleSignup(profile: { subject: string; displayName?: string }) {
+		const token = this.begin(AuthProvider.GOOGLE);
+		this.challenges.set(token, { provider: AuthProvider.GOOGLE, expiresAt: Date.now() + 10 * 60000, ...profile });
+		return token;
+	}
+
+	public consumeGoogleSignup(token: string) {
+		const pending = this.challenges.get(token);
+		this.challenges.delete(token);
+		if (!pending?.subject || pending.provider !== AuthProvider.GOOGLE || pending.expiresAt <= Date.now())
+			throw new UnauthorizedException('Google signup expired. Continue with Google again.');
+		return { subject: pending.subject, displayName: pending.displayName };
+	}
+
 	public async verify(input: SocialLoginInput, userId?: string): Promise<string> {
+		return (await this.verifyProfile(input, userId)).subject;
+	}
+
+	public async verifyProfile(
+		input: SocialLoginInput,
+		userId?: string,
+	): Promise<{ subject: string; displayName?: string }> {
 		const settings = this.settings(input.provider);
 		const challenge = this.challenges.get(input.nonce);
 		this.challenges.delete(input.nonce);
 		if (
 			!challenge ||
+			challenge.subject ||
 			challenge.provider !== input.provider ||
 			challenge.userId !== userId ||
 			challenge.expiresAt <= Date.now()
@@ -96,7 +121,10 @@ export class SocialAuthService {
 				claims.sub.length > 254
 			)
 				throw new Error('Invalid claims');
-			return claims.sub;
+			return {
+				subject: claims.sub,
+				displayName: typeof claims.name === 'string' ? claims.name.trim().slice(0, 60) : undefined,
+			};
 		} catch {
 			throw new UnauthorizedException('Social sign-in could not be verified');
 		}

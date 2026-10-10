@@ -199,3 +199,18 @@ export class ChangeEmailInput extends EmailInput {
 	@Length(1, 128)
 	currentPassword!: string;
 }
+
+@InputType()
+export class GoogleLoginInput extends OmitType(SocialLoginInput, [
+	'provider',
+	'displayName',
+	'preferredLocale',
+	'phoneNumber',
+] as const) {}
+
+@InputType()
+export class CompleteGoogleSignupInput extends OmitType(RegisterInput, ['email', 'password'] as const) {
+	@Field(() => String)
+	@Matches(/^[a-f0-9]{64}$/)
+	signupToken!: string;
+}

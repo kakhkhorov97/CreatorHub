@@ -15,3 +15,15 @@ export class AuthPayload {
 	@Field(() => User)
 	user!: User;
 }
+
+@ObjectType()
+export class GoogleSignInResult {
+	@Field(() => AuthPayload, { nullable: true })
+	session?: AuthPayload;
+
+	@Field(() => String, { nullable: true })
+	signupToken?: string;
+
+	@Field(() => String, { nullable: true })
+	displayName?: string;
+}

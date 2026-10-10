@@ -10,6 +10,8 @@ const securityGroups: Record<string, string> = {
 	loginPhone: 'login',
 	beginSocialLogin: 'login',
 	loginSocial: 'login',
+	loginGoogle: 'login',
+	completeGoogleSignup: 'registration',
 	register: 'registration',
 	registerPhone: 'registration',
 	requestEmailVerification: 'verification',
@@ -25,6 +27,7 @@ const accountChanges = new Set([
 	'unlinkAuthIdentity',
 	'changePhonePassword',
 	'changePassword',
+	'requestEmailChange',
 ]);
 
 @Injectable()
