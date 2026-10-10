@@ -125,6 +125,8 @@ describe('CreatorHub workflow', () => {
 		});
 		process.env.NODE_ENV = 'test';
 		process.env.GOOGLE_CLIENT_ID = 'disposable-google-client';
+		process.env.TELEGRAM_CLIENT_ID = 'disposable-telegram-client';
+		process.env.KAKAO_CLIENT_ID = 'disposable-kakao-client';
 		uploadDirectory = await mkdtemp(join(tmpdir(), 'creatorhub-uploads-'));
 		process.env.UPLOAD_DIR = uploadDirectory;
 		process.env.UPLOAD_BASE_URL = 'http://localhost:7001/uploads';
@@ -704,6 +706,56 @@ describe('CreatorHub workflow', () => {
 			verifier.mockRestore();
 		}
 	});
+	it.each(['TELEGRAM', 'KAKAO'])(
+		'creates one %s account with private contact details and rejects replay and suspension',
+		async (provider) => {
+			const social = app.get(SocialAuthService);
+			const profile = { subject: `${provider}-fixture`, displayName: `${provider} Member` };
+			const verifier = jest
+				.spyOn(social, provider === 'TELEGRAM' ? 'verifyProfile' : 'verifyKakaoCode')
+				.mockResolvedValue(profile);
+			const operation = provider === 'TELEGRAM' ? 'loginTelegram' : 'loginKakao';
+			const inputType = provider === 'TELEGRAM' ? 'TelegramLoginInput' : 'KakaoLoginInput';
+			const login = `mutation($input:${inputType}!){${operation}(input:$input){signupToken displayName session{accessToken user{_id}}}}`;
+			const input =
+				provider === 'TELEGRAM'
+					? { nonce: 'a'.repeat(64), idToken: 'fixture' }
+					: { state: 'a'.repeat(64), code: 'fixture' };
+			const complete =
+				'mutation($input:CompleteSocialSignupInput!){completeSocialSignup(input:$input){accessToken user{_id role}}}';
+			try {
+				const first = (await ok(login, { input }))[operation];
+				const parallel = (await ok(login, { input }))[operation];
+				expect(first.session).toBeNull();
+				const signup = {
+					provider,
+					signupToken: first.signupToken,
+					displayName: profile.displayName,
+					phoneNumber: '+821023456789',
+				};
+				expect((await gql(complete, { input: { ...signup, phoneNumber: 'bad' } })).errors).toBeDefined();
+				const session = (await ok(complete, { input: signup })).completeSocialSignup;
+				await ok('query{me{_id}}', {}, session.accessToken);
+				expect(session.user.role).toBe('USER');
+				const user = await db.model('User').findById(session.user._id).select('+phoneNumber');
+				expect(user.phoneNumber).toBe(signup.phoneNumber);
+				const identity = await db.model('AuthIdentity').findOne({ userId: user._id }).select('+passwordHash');
+				expect(identity.provider).toBe(provider);
+				expect(identity.passwordHash).toBeUndefined();
+				expect((await gql(complete, { input: signup })).errors).toBeDefined();
+				const duplicate = (await ok(complete, { input: { ...signup, signupToken: parallel.signupToken } }))
+					.completeSocialSignup;
+				expect(duplicate.user._id).toBe(session.user._id);
+				const returning = (await ok(login, { input }))[operation];
+				expect(returning.signupToken).toBeNull();
+				expect(returning.session.user._id).toBe(session.user._id);
+				await db.model('User').updateOne({ _id: user._id }, { $set: { status: 'SUSPENDED' } });
+				expect((await gql(login, { input })).errors).toBeDefined();
+			} finally {
+				verifier.mockRestore();
+			}
+		},
+	);
 	it('creates a category and a creator draft, validates publication, and enforces ownership', async () => {
 		const category = await ok(
 			'mutation($input:CategoryInput!){createCategory(input:$input){_id}}',

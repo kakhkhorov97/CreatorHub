@@ -11,6 +11,9 @@ import { AuthSession } from '../../libs/dto/auth/auth-session';
 import { AuthToken } from '../../libs/dto/auth/auth-token';
 import {
 	GoogleLoginInput,
+	TelegramLoginInput,
+	KakaoLoginInput,
+	CompleteSocialSignupInput,
 	CompleteGoogleSignupInput,
 	LoginInput,
 	RegisterInput,
@@ -155,28 +158,54 @@ export class AuthService {
 	}
 
 	public async loginGoogle(input: GoogleLoginInput) {
-		const profile = await this.social.verifyProfile({ ...input, provider: AuthProvider.GOOGLE });
-		const identity = await this.identities.findOne({ provider: AuthProvider.GOOGLE, providerSubject: profile.subject });
+		return this.signInVerifiedProfile(
+			AuthProvider.GOOGLE,
+			await this.social.verifyProfile({ ...input, provider: AuthProvider.GOOGLE }),
+		);
+	}
+
+	public beginKakaoLogin() {
+		return this.social.beginKakao();
+	}
+
+	public async loginKakao(input: KakaoLoginInput) {
+		return this.signInVerifiedProfile(AuthProvider.KAKAO, await this.social.verifyKakaoCode(input));
+	}
+
+	public async loginTelegram(input: TelegramLoginInput) {
+		return this.signInVerifiedProfile(
+			AuthProvider.TELEGRAM,
+			await this.social.verifyProfile({ ...input, provider: AuthProvider.TELEGRAM }),
+		);
+	}
+
+	private async signInVerifiedProfile(provider: AuthProvider, profile: { subject: string; displayName?: string }) {
+		const identity = await this.identities.findOne({ provider, providerSubject: profile.subject });
 		if (identity) {
 			await this.requireUsable(identity);
 			const user = await this.activeUser(identity.userId);
 			await this.recordLogin(user, identity);
 			return { session: await this.createSession(user, identity) };
 		}
-		return { signupToken: this.social.prepareGoogleSignup(profile), displayName: profile.displayName };
+		return { signupToken: this.social.prepareSignup(provider, profile), displayName: profile.displayName };
 	}
 
-	public async completeGoogleSignup(input: CompleteGoogleSignupInput) {
-		const profile = this.social.consumeGoogleSignup(input.signupToken);
+	public completeGoogleSignup(input: CompleteGoogleSignupInput) {
+		return this.completeProviderSignup(AuthProvider.GOOGLE, input);
+	}
+
+	public completeSocialSignup(input: CompleteSocialSignupInput) {
+		return this.completeProviderSignup(input.provider, input);
+	}
+
+	private async completeProviderSignup(provider: AuthProvider, input: CompleteGoogleSignupInput) {
+		const profile = this.social.consumeSignup(provider, input.signupToken);
 		let account: { user: User; identity: AuthIdentity };
 		try {
-			account = await this.createAccount(input, AuthProvider.GOOGLE, profile.subject);
+			account = await this.createAccount(input, provider, profile.subject);
 		} catch (error) {
 			if (!(error instanceof ConflictException)) throw error;
-			const identity = await this.identities.findOne({
-				provider: AuthProvider.GOOGLE,
-				providerSubject: profile.subject,
-			});
+			const identity = await this.identities.findOne({ provider, providerSubject: profile.subject });
 			if (!identity) throw error;
 			await this.requireUsable(identity);
 			account = { identity, user: await this.activeUser(identity.userId) };

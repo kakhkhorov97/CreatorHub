@@ -15,6 +15,8 @@ describe('Social provider token verification', () => {
 				GOOGLE_CLIENT_ID: 'google-client',
 				TELEGRAM_CLIENT_ID: 'telegram-client',
 				KAKAO_CLIENT_ID: 'kakao-client',
+				KAKAO_CLIENT_SECRET: 'fixture-secret',
+				FRONTEND_URL: 'http://localhost:7007',
 			}),
 		);
 		fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
@@ -102,5 +104,73 @@ describe('Social provider token verification', () => {
 		} finally {
 			clock.mockRestore();
 		}
+	});
+	it.each([AuthProvider.TELEGRAM, AuthProvider.KAKAO])(
+		'binds %s signup tickets to their provider and expiry',
+		(provider) => {
+			const ticket = service.prepareSignup(provider, { subject: 'verified-subject' });
+			expect(() => service.consumeSignup(AuthProvider.GOOGLE, ticket)).toThrow('Google signup expired');
+			const valid = service.prepareSignup(provider, { subject: 'verified-subject' });
+			expect(service.consumeSignup(provider, valid).subject).toBe('verified-subject');
+			expect(() => service.consumeSignup(provider, valid)).toThrow('signup expired');
+			const expired = service.prepareSignup(provider, { subject: 'verified-subject' });
+			const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 11 * 60000);
+			try {
+				expect(() => service.consumeSignup(provider, expired)).toThrow('signup expired');
+			} finally {
+				clock.mockRestore();
+			}
+		},
+	);
+
+	it('exchanges a Kakao code only for a live server-created state and validates the returned signed ID token', async () => {
+		const challenge = service.beginKakao();
+		const authorization = new URL(challenge.authorizationUrl);
+		expect(authorization.searchParams.get('redirect_uri')).toBe('http://localhost:7007/account/kakao-callback');
+		expect(authorization.searchParams.get('scope')).toBe('openid');
+		const nonce = authorization.searchParams.get('nonce')!;
+		const idToken = token(nonce, { iss: 'https://kauth.kakao.com', aud: 'kakao-client', nickname: 'Kakao Member' });
+		fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ id_token: idToken }) } as Response);
+		await expect(service.verifyKakaoCode({ code: 'one-use-code', state: challenge.state })).resolves.toEqual({
+			subject: 'provider-owned-subject',
+			displayName: 'Kakao Member',
+		});
+		const request = fetchMock.mock.calls[0];
+		expect(request[0]).toBe('https://kauth.kakao.com/oauth/token');
+		expect(request[1].body.get('client_secret')).toBe('fixture-secret');
+		expect(request[1].body.get('redirect_uri')).toBe('http://localhost:7007/account/kakao-callback');
+		await expect(service.verifyKakaoCode({ code: 'one-use-code', state: challenge.state })).rejects.toThrow('expired');
+	});
+
+	it('rejects unknown or expired Kakao states before sending a token request', async () => {
+		await expect(service.verifyKakaoCode({ code: 'code', state: 'a'.repeat(64) })).rejects.toThrow('expired');
+		const challenge = service.beginKakao();
+		const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 11 * 60000);
+		try {
+			await expect(service.verifyKakaoCode({ code: 'code', state: challenge.state })).rejects.toThrow('expired');
+		} finally {
+			clock.mockRestore();
+		}
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it('rejects Kakao exchange failures and wrong-audience ID tokens without leaking provider responses', async () => {
+		let challenge = service.beginKakao();
+		fetchMock.mockResolvedValueOnce({
+			ok: false,
+			json: async () => ({ client_secret: 'never-return-this' }),
+		} as Response);
+		await expect(service.verifyKakaoCode({ code: 'code', state: challenge.state })).rejects.toThrow(
+			'Kakao sign-in could not be verified',
+		);
+		challenge = service.beginKakao();
+		const nonce = new URL(challenge.authorizationUrl).searchParams.get('nonce')!;
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({ id_token: token(nonce, { iss: 'https://kauth.kakao.com', aud: 'wrong-client' }) }),
+		} as Response);
+		await expect(service.verifyKakaoCode({ code: 'code', state: challenge.state })).rejects.toThrow(
+			'Kakao sign-in could not be verified',
+		);
 	});
 });

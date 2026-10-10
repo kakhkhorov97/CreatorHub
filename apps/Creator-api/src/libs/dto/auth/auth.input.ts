@@ -214,3 +214,25 @@ export class CompleteGoogleSignupInput extends OmitType(RegisterInput, ['email',
 	@Matches(/^[a-f0-9]{64}$/)
 	signupToken!: string;
 }
+
+@InputType()
+export class TelegramLoginInput extends GoogleLoginInput {}
+
+@InputType()
+export class KakaoLoginInput {
+	@Field(() => String)
+	@IsString()
+	@Length(1, 2048)
+	code!: string;
+
+	@Field(() => String)
+	@Matches(/^[a-f0-9]{64}$/)
+	state!: string;
+}
+
+@InputType()
+export class CompleteSocialSignupInput extends CompleteGoogleSignupInput {
+	@Field(() => AuthProvider)
+	@IsIn([AuthProvider.TELEGRAM, AuthProvider.KAKAO])
+	provider!: AuthProvider;
+}

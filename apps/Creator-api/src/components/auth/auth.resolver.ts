@@ -1,8 +1,16 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthPayload, GoogleSignInResult } from '../../libs/dto/auth/auth-payload';
+import {
+	AuthPayload,
+	GoogleSignInResult,
+	SocialSignInResult,
+	KakaoLoginChallenge,
+} from '../../libs/dto/auth/auth-payload';
 import {
 	GoogleLoginInput,
+	TelegramLoginInput,
+	KakaoLoginInput,
+	CompleteSocialSignupInput,
 	CompleteGoogleSignupInput,
 	PhoneRegisterInput,
 	PhoneLoginInput,
@@ -58,6 +66,26 @@ export class AuthResolver {
 	@Mutation(() => AuthPayload)
 	completeGoogleSignup(@Args('input') input: CompleteGoogleSignupInput) {
 		return this.auth.completeGoogleSignup(input);
+	}
+
+	@Mutation(() => KakaoLoginChallenge)
+	beginKakaoLogin() {
+		return this.auth.beginKakaoLogin();
+	}
+
+	@Mutation(() => SocialSignInResult)
+	loginKakao(@Args('input') input: KakaoLoginInput) {
+		return this.auth.loginKakao(input);
+	}
+
+	@Mutation(() => SocialSignInResult)
+	loginTelegram(@Args('input') input: TelegramLoginInput) {
+		return this.auth.loginTelegram(input);
+	}
+
+	@Mutation(() => AuthPayload)
+	completeSocialSignup(@Args('input') input: CompleteSocialSignupInput) {
+		return this.auth.completeSocialSignup(input);
 	}
 
 	@Mutation(() => AuthPayload)

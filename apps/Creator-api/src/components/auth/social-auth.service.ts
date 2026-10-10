@@ -25,6 +25,8 @@ const providers = {
 
 @Injectable()
 export class SocialAuthService {
+	private readonly kakaoAttempts = new Map<string, { nonce: string; redirectUri: string; expiresAt: number }>();
+
 	private readonly challenges = new Map<
 		string,
 		{ provider: AuthProvider; expiresAt: number; userId?: string; subject?: string; displayName?: string }
@@ -50,17 +52,84 @@ export class SocialAuthService {
 	}
 
 	public prepareGoogleSignup(profile: { subject: string; displayName?: string }) {
-		const token = this.begin(AuthProvider.GOOGLE);
-		this.challenges.set(token, { provider: AuthProvider.GOOGLE, expiresAt: Date.now() + 10 * 60000, ...profile });
-		return token;
+		return this.prepareSignup(AuthProvider.GOOGLE, profile);
 	}
 
 	public consumeGoogleSignup(token: string) {
+		return this.consumeSignup(AuthProvider.GOOGLE, token);
+	}
+
+	public prepareSignup(provider: AuthProvider, profile: { subject: string; displayName?: string }) {
+		const token = this.begin(provider);
+		this.challenges.set(token, { provider, expiresAt: Date.now() + 10 * 60000, ...profile });
+		return token;
+	}
+
+	public consumeSignup(provider: AuthProvider, token: string) {
 		const pending = this.challenges.get(token);
 		this.challenges.delete(token);
-		if (!pending?.subject || pending.provider !== AuthProvider.GOOGLE || pending.expiresAt <= Date.now())
-			throw new UnauthorizedException('Google signup expired. Continue with Google again.');
+		if (!pending?.subject || pending.provider !== provider || pending.expiresAt <= Date.now()) {
+			const name = provider === AuthProvider.GOOGLE ? 'Google' : provider === AuthProvider.KAKAO ? 'Kakao' : 'Telegram';
+			throw new UnauthorizedException(`${name} signup expired. Continue with ${name} again.`);
+		}
 		return { subject: pending.subject, displayName: pending.displayName };
+	}
+
+	public beginKakao() {
+		const settings = this.settings(AuthProvider.KAKAO);
+		if (!this.config.get<string>('KAKAO_CLIENT_SECRET'))
+			throw new ServiceUnavailableException('Kakao login is not configured');
+		for (const [state, attempt] of this.kakaoAttempts)
+			if (attempt.expiresAt <= Date.now()) this.kakaoAttempts.delete(state);
+		if (this.kakaoAttempts.size >= 1000) throw new ServiceUnavailableException('Try signing in again shortly');
+		const redirectUri = new URL(
+			'/account/kakao-callback',
+			this.config.get<string>('FRONTEND_URL') || 'http://localhost:7007',
+		).toString();
+		const nonce = this.begin(AuthProvider.KAKAO);
+		const state = newToken();
+		this.kakaoAttempts.set(state, { nonce, redirectUri, expiresAt: Date.now() + 10 * 60000 });
+		const url = new URL('https://kauth.kakao.com/oauth/authorize');
+		url.search = new URLSearchParams({
+			client_id: settings.audience,
+			redirect_uri: redirectUri,
+			response_type: 'code',
+			scope: 'openid',
+			nonce,
+			state,
+		}).toString();
+		return { authorizationUrl: url.toString(), state };
+	}
+
+	public async verifyKakaoCode(input: { code: string; state: string }) {
+		const attempt = this.kakaoAttempts.get(input.state);
+		this.kakaoAttempts.delete(input.state);
+		if (!attempt || attempt.expiresAt <= Date.now())
+			throw new UnauthorizedException('Kakao sign-in expired. Please try again.');
+		try {
+			const settings = this.settings(AuthProvider.KAKAO);
+			const response = await fetch('https://kauth.kakao.com/oauth/token', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams({
+					grant_type: 'authorization_code',
+					client_id: settings.audience,
+					client_secret: this.config.get<string>('KAKAO_CLIENT_SECRET') || '',
+					redirect_uri: attempt.redirectUri,
+					code: input.code,
+				}),
+				signal: AbortSignal.timeout(8000),
+				redirect: 'error',
+			});
+			if (!response.ok) throw new Error('Token exchange failed');
+			const result = await response.json();
+			if (typeof result.id_token !== 'string' || result.id_token.length > 16384) throw new Error('Missing ID token');
+			return await this.verifyProfile({ provider: AuthProvider.KAKAO, nonce: attempt.nonce, idToken: result.id_token });
+		} catch {
+			throw new UnauthorizedException('Kakao sign-in could not be verified. Please try again.');
+		} finally {
+			this.challenges.delete(attempt.nonce);
+		}
 	}
 
 	public async verify(input: SocialLoginInput, userId?: string): Promise<string> {
@@ -123,7 +192,12 @@ export class SocialAuthService {
 				throw new Error('Invalid claims');
 			return {
 				subject: claims.sub,
-				displayName: typeof claims.name === 'string' ? claims.name.trim().slice(0, 60) : undefined,
+				displayName:
+					typeof claims.name === 'string'
+						? claims.name.trim().slice(0, 60)
+						: typeof claims.nickname === 'string'
+							? claims.nickname.trim().slice(0, 60)
+							: undefined,
 			};
 		} catch {
 			throw new UnauthorizedException('Social sign-in could not be verified');

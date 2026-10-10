@@ -27,3 +27,15 @@ export class GoogleSignInResult {
 	@Field(() => String, { nullable: true })
 	displayName?: string;
 }
+
+@ObjectType()
+export class SocialSignInResult extends GoogleSignInResult {}
+
+@ObjectType()
+export class KakaoLoginChallenge {
+	@Field()
+	authorizationUrl!: string;
+
+	@Field()
+	state!: string;
+}
