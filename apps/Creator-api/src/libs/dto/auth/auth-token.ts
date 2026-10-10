@@ -13,6 +13,10 @@ export class AuthToken extends Entity {
 
 	tokenHash!: string;
 
+	previousEmail?: string;
+
+	replacementEmail?: string;
+
 	@Field(() => Date)
 	expiresAt!: Date;
 

@@ -191,3 +191,11 @@ export class ChangePasswordInput {
 	@Field(() => String)
 	password!: string;
 }
+
+@InputType()
+export class ChangeEmailInput extends EmailInput {
+	@Field(() => String)
+	@IsString()
+	@Length(1, 128)
+	currentPassword!: string;
+}

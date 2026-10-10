@@ -17,6 +17,7 @@ import {
 	SocialLoginInput,
 	ResetPasswordInput,
 	ChangePasswordInput,
+	ChangeEmailInput,
 	LinkEmailInput,
 	LinkPhoneInput,
 } from '../../libs/dto/auth/auth.input';
@@ -332,14 +333,92 @@ export class AuthService {
 	}
 
 	public async verifyEmail(raw: string): Promise<boolean> {
+		if (!/^[a-f0-9]{64}$/.test(raw)) throw new UnauthorizedException('Invalid or expired token');
+		try {
+			await this.connection.transaction(async (session) => {
+				const token = await this.tokens
+					.findOne({
+						tokenHash: tokenHash(raw),
+						purpose: { $in: [AuthTokenPurpose.EMAIL_VERIFY, AuthTokenPurpose.EMAIL_CHANGE] },
+					})
+					.select('+previousEmail +replacementEmail')
+					.session(session);
+				if (!token) throw new UnauthorizedException('Invalid or expired token');
+				const identity = await this.consume(raw, token.purpose, session);
+				await this.lockAccount({ _id: identity.userId } as User, session);
+				if (token.purpose === AuthTokenPurpose.EMAIL_CHANGE) {
+					if (!identity.verifiedAt || !token.replacementEmail || identity.providerSubject !== token.previousEmail)
+						throw new UnauthorizedException('Invalid or expired token');
+					await this.identities.updateOne(
+						{ _id: identity._id },
+						{
+							$set: { providerSubject: token.replacementEmail, verifiedAt: new Date() },
+						},
+						{ session },
+					);
+					await this.revokeAll(identity.userId, session);
+				} else {
+					await this.identities.updateOne(
+						{ _id: identity._id },
+						{
+							$set: { verifiedAt: identity.verifiedAt ?? new Date() },
+						},
+						{ session },
+					);
+				}
+			});
+		} catch (error) {
+			if (duplicateKey(error)) throw new ConflictException('That email already belongs to an account');
+			throw error;
+		}
+		return true;
+	}
+
+	public async requestEmailChange(user: User, sessionId: string, input: ChangeEmailInput): Promise<boolean> {
+		const raw = newToken();
 		await this.connection.transaction(async (session) => {
-			const identity = await this.consume(raw, AuthTokenPurpose.EMAIL_VERIFY, session);
-			await this.identities.updateOne(
-				{ _id: identity._id },
-				{ $set: { verifiedAt: identity.verifiedAt ?? new Date() } },
+			await this.lockAccount(user, session);
+			await this.recentSession(user, sessionId, session);
+			const identity = await this.identities
+				.findOne({
+					userId: user._id,
+					provider: AuthProvider.EMAIL,
+					revokedAt: { $exists: false },
+				})
+				.select('+passwordHash')
+				.session(session);
+			await this.requireUsable(identity);
+			if (!identity?.passwordHash) throw new UnauthorizedException('Password login unavailable');
+			if (!(await this.comparePasswords(input.currentPassword, identity.passwordHash)))
+				throw new BadRequestException('Current password is incorrect');
+			if (identity.providerSubject === input.email) throw new BadRequestException('Choose a different email address');
+			if (await this.identities.exists({ provider: AuthProvider.EMAIL, providerSubject: input.email }).session(session))
+				throw new ConflictException('That email already belongs to an account');
+			await this.tokens.updateMany(
+				{
+					authIdentityId: identity._id,
+					purpose: AuthTokenPurpose.EMAIL_CHANGE,
+					consumedAt: { $exists: false },
+					revokedAt: { $exists: false },
+				},
+				{ $set: { revokedAt: new Date() } },
+				{ session },
+			);
+			await this.tokens.create(
+				[
+					{
+						authIdentityId: identity._id,
+						purpose: AuthTokenPurpose.EMAIL_CHANGE,
+						tokenHash: tokenHash(raw),
+						previousEmail: identity.providerSubject,
+						replacementEmail: input.email,
+						expiresAt: new Date(Date.now() + 1800000),
+					},
+				],
 				{ session },
 			);
 		});
+		await this.mail.sendToken(input.email, AuthTokenPurpose.EMAIL_CHANGE, raw);
 		return true;
 	}
 
@@ -357,14 +436,16 @@ export class AuthService {
 		return this.identities.find({ userId: user._id, revokedAt: { $exists: false } }).sort({ createdAt: 1 });
 	}
 
-	private async recentSession(user: User, sessionId: string) {
-		const recent = await this.sessions.exists({
-			_id: shapeIntoMongooseObjectId(sessionId),
-			userId: user._id,
-			revokedAt: { $exists: false },
-			expiresAt: { $gt: new Date() },
-			createdAt: { $gt: new Date(Date.now() - 10 * 60000) },
-		});
+	private async recentSession(user: User, sessionId: string, session: ClientSession | null = null) {
+		const recent = await this.sessions
+			.exists({
+				_id: shapeIntoMongooseObjectId(sessionId),
+				userId: user._id,
+				revokedAt: { $exists: false },
+				expiresAt: { $gt: new Date() },
+				createdAt: { $gt: new Date(Date.now() - 10 * 60000) },
+			})
+			.session(session);
 		if (!recent) throw new UnauthorizedException('Sign in again before changing login methods');
 	}
 
@@ -410,6 +491,8 @@ export class AuthService {
 				await this.lockAccount(user, session);
 				const retained = await this.identities.findOne({ userId: user._id, provider }).session(session);
 				if (retained) {
+					if (provider === AuthProvider.EMAIL && !retained.revokedAt)
+						throw new ConflictException('Use Change email to replace your current email');
 					if (retained.providerSubject !== providerSubject)
 						throw new ConflictException('This account already has a retained login for that provider');
 					if (!retained.revokedAt) return retained;
@@ -450,6 +533,8 @@ export class AuthService {
 				.session(session);
 			if (!identity) throw new UnauthorizedException('Login method unavailable');
 			if (identity.revokedAt) return;
+			if (identity.provider === AuthProvider.EMAIL)
+				throw new ConflictException('Use Change email to replace your current email');
 			const remaining = await this.identities
 				.exists({
 					userId: user._id,

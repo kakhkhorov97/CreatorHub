@@ -22,6 +22,18 @@ const AuthTokenSchema = new Schema(
 			select: false,
 		},
 
+		previousEmail: {
+			type: String,
+			maxlength: 254,
+			select: false,
+		},
+
+		replacementEmail: {
+			type: String,
+			maxlength: 254,
+			select: false,
+		},
+
 		expiresAt: {
 			type: Date,
 			required: true,

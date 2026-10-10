@@ -13,10 +13,11 @@ export class MailService {
 
 	async sendToken(email: string, purpose: AuthTokenPurpose, token: string): Promise<void> {
 		const url = new URL(
-			purpose === AuthTokenPurpose.EMAIL_VERIFY ? '/verify-email' : '/reset-password',
+			purpose === AuthTokenPurpose.PASSWORD_RESET ? '/reset-password' : '/verify-email',
 			this.config.getOrThrow<string>('FRONTEND_URL'),
 		);
 		url.searchParams.set('token', token);
+		if (purpose === AuthTokenPurpose.EMAIL_CHANGE) url.searchParams.set('purpose', 'email-change');
 		const message = { to: email, template: purpose, actionUrl: url.href };
 		const endpoint = this.config.get<string>('MAIL_WEBHOOK_URL');
 		if (endpoint) {
