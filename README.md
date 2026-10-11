@@ -76,7 +76,7 @@ Paginated list inputs use `page` starting at 1 and `limit` defaulting to 20, wit
 
 The external service contracts are documented in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
-- Email: configure `MAIL_WEBHOOK_URL` and `MAIL_WEBHOOK_TOKEN` for delivery. Development files are the fallback; production requires an email adapter.
+- Email: configure `RESEND_API_KEY` and `RESEND_FROM_EMAIL` for direct Resend delivery from your verified domain. No SDK package is needed. The existing `MAIL_WEBHOOK_URL`/`MAIL_WEBHOOK_TOKEN` adapter remains supported when Resend is not configured. Development files are the fallback only when no provider is configured; production requires a provider.
 - Media: `imageUploader` and `imagesUploader` restore local GraphQL uploads. Use target `avatar` or `project`, up to 10 MB per file and ten files per request. Files are stored in `uploads/<userId>/<target>/` and served under `/uploads`. Configure `UPLOAD_BASE_URL` to the public API URL ending in `/uploads`; production requires HTTPS. Existing `MEDIA_BASE_URL` references remain accepted for compatibility.
 - AI: optionally configure `DISCOVERY_PARSER_URL` and `DISCOVERY_PARSER_TOKEN` for a structured-filter AI adapter. Without an adapter, the response explicitly reports `KEYWORD`. This fallback does not claim to be an LLM. Provider results cannot bypass public visibility checks or submit inquiries.
 
@@ -99,7 +99,7 @@ Integration tests start an isolated MongoDB replica set, use real indexes and tr
 
 ## Deployment and portfolio notes
 
-Set `NODE_ENV=production`, `MONGO_PROD`, a strong `SECRET_TOKEN` or `JWT_SECRET`, an HTTPS `FRONTEND_URL`, an HTTPS `UPLOAD_BASE_URL`, and email webhook credentials. Run `npm run db:setup` before serving traffic, then build both apps and run `npm run start:prod` and `npm run start:prod:batch`. Keep secrets outside source control and terminate HTTPS at the deployment ingress.
+Set `NODE_ENV=production`, `MONGO_PROD`, a strong `SECRET_TOKEN` or `JWT_SECRET`, an HTTPS `FRONTEND_URL`, an HTTPS `UPLOAD_BASE_URL`, and Resend or email webhook credentials. Run `NODE_ENV=production npm run db:setup` before serving traffic, then build both apps and run `npm run start:prod` and `npm run start:prod:batch`. Keep secrets outside source control and terminate HTTPS at the deployment ingress.
 
 The batch app runs notification delivery on port 3002. Keep it running alongside the API. The API records activity events but does not schedule their delivery. Version 1 has no ranking jobs or automatic inquiry closure; MongoDB TTL indexes handle expired authentication record cleanup.
 

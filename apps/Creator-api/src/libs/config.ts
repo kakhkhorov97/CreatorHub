@@ -32,7 +32,20 @@ export function validateEnvironment(input: Record<string, unknown>) {
 		)
 			throw new Error(`${name} must be a valid HTTPS URL`);
 	}
-	if (production && (!env.MAIL_WEBHOOK_URL || !env.MAIL_WEBHOOK_TOKEN || !input.UPLOAD_BASE_URL))
+	if (Boolean(env.RESEND_API_KEY) !== Boolean(env.RESEND_FROM_EMAIL))
+		throw new Error('Set both RESEND_API_KEY and RESEND_FROM_EMAIL for Resend delivery');
+	if (env.RESEND_API_KEY && (typeof env.RESEND_API_KEY !== 'string' || !/^re_\S+$/.test(env.RESEND_API_KEY)))
+		throw new Error('Set a valid RESEND_API_KEY');
+	if (
+		env.RESEND_FROM_EMAIL &&
+		(typeof env.RESEND_FROM_EMAIL !== 'string' ||
+			/[\r\n]/.test(env.RESEND_FROM_EMAIL) ||
+			!/^(?:[^<>]+<)?[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>?$/.test(env.RESEND_FROM_EMAIL))
+	)
+		throw new Error('Set a valid RESEND_FROM_EMAIL sender');
+	const emailConfigured =
+		(env.RESEND_API_KEY && env.RESEND_FROM_EMAIL) || (env.MAIL_WEBHOOK_URL && env.MAIL_WEBHOOK_TOKEN);
+	if (production && (!emailConfigured || !input.UPLOAD_BASE_URL))
 		throw new Error('Production requires email delivery and an HTTPS UPLOAD_BASE_URL');
 	if (env.MAIL_WEBHOOK_URL && !env.MAIL_WEBHOOK_TOKEN) throw new Error('Set MAIL_WEBHOOK_TOKEN for email delivery');
 	if (env.DISCOVERY_PARSER_URL && !env.DISCOVERY_PARSER_TOKEN)
