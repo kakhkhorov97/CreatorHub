@@ -1,5 +1,5 @@
 import { ApolloServer } from '@apollo/server';
-import { expressMiddleware } from '@apollo/server/express4';
+import { expressMiddleware } from '@as-integrations/express5';
 import { Logger } from '@nestjs/common';
 import express, { Express, Request } from 'express';
 import request from 'supertest';

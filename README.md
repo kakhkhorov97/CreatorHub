@@ -6,10 +6,10 @@ CreatorHub adapts the Nestar architecture. Features retain separate modules, ser
 
 ## Run locally
 
-Use Node.js 22 and npm. MongoDB must be a replica set because application workflows use transactions.
+Use Node.js 22.22.1 or newer within Node 22, and npm. The `.nvmrc` selects Node 22 for local development; Docker supplies its own Node runtime. MongoDB must be a replica set because application workflows use transactions.
 
 ```bash
-npm ci
+npm ci --legacy-peer-deps
 ```
 
 Create an ignored `.env` file with these settings. Replace the secret placeholder with at least 32 random characters.
@@ -111,4 +111,13 @@ Deployment preparation is in progress. Dependency security upgrades and live pro
 
 Set `NODE_ENV=production`, a separate `MONGO_PROD` URI, a strong secret, an HTTPS `FRONTEND_URL`, an HTTPS `UPLOAD_BASE_URL`, persistent `UPLOAD_DIR` and email credentials. Build both applications and run `npm run start:prod` and `NODE_ENV=production npm run start:prod:batch`. Run database setup against the intended production database before serving traffic.
 
-Use explicit `PORT_API` and `PORT_BATCH` values. The worker defaults to 3002 when no override is provided. On a shared VPS, use dedicated CreatorHub directories and services, available assigned ports and a domain-specific reverse proxy. Preserve other applications' files and services.
+Use explicit `PORT_API` and `PORT_BATCH` values. The worker defaults to 7002 when no override is provided. On a shared VPS, use dedicated CreatorHub directories and services, available assigned ports and a domain-specific reverse proxy. Preserve other applications' files and services.
+
+The retained starter dependencies include older peer ranges. Use the install flag above with the committed npm lockfile.
+
+
+## Local reverse proxy
+
+When Nginx on the same server proxies this application, set the server-only `TRUST_PROXY=loopback`. Leave it unset when clients connect directly. Restrict application ports to local access and have the CreatorHub Nginx location overwrite `X-Forwarded-For` with `$remote_addr`. Do not enable unrestricted proxy trust or accept arbitrary client-supplied forwarding headers. Configure only CreatorHub's proxy locations on a shared server.
+
+Production service, HTTPS proxy, monitoring, backup and paired rollback templates are in [deploy/README.md](deploy/README.md). They are prepared files and still require installation and live verification on the shared VPS. `GET /health` checks database connectivity without returning private details. Production defaults to listening on `127.0.0.1`; local development retains network access unless `LISTEN_HOST` is overridden.

@@ -4,12 +4,16 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { configureTrustedProxy } from './libs/helpers/trusted-proxy';
+import { protectGraphqlGet } from './libs/helpers/graphql-http';
 import { requestLogger } from './libs/interceptors/request-logger';
 
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule);
 	const config = app.get(ConfigService);
+	configureTrustedProxy(app.getHttpAdapter().getInstance(), config.get<string>('TRUST_PROXY'));
 	app.use(requestLogger);
+	app.use(protectGraphqlGet);
 	app.useGlobalInterceptors(new LoggingInterceptor());
 	configureUploads(app);
 	app.useGlobalPipes(
@@ -17,7 +21,7 @@ async function bootstrap() {
 	);
 	app.enableCors({ origin: config.getOrThrow<string>('FRONTEND_URL'), credentials: false });
 	app.enableShutdownHooks();
-	await app.listen(process.env.PORT_API ?? 7001);
+	await app.listen(process.env.PORT_API ?? 7001, config.get<string>('LISTEN_HOST') ?? '0.0.0.0');
 }
 
 bootstrap().catch(() => {

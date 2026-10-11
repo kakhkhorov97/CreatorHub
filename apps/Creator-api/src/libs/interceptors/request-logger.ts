@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { ApolloServerPlugin } from '@apollo/server';
+import type { ApolloServerPlugin } from '@apollo/server';
 import { randomUUID } from 'node:crypto';
 import { NextFunction, Request, Response } from 'express';
 

@@ -1,6 +1,16 @@
 export function validateEnvironment(input: Record<string, unknown>) {
 	const env = { ...input };
 	const production = env.NODE_ENV === 'production';
+	env.LISTEN_HOST ??= production ? '127.0.0.1' : '0.0.0.0';
+	if (!['127.0.0.1', '0.0.0.0', '::1'].includes(String(env.LISTEN_HOST)))
+		throw new Error('LISTEN_HOST must be 127.0.0.1, ::1 or 0.0.0.0');
+	for (const name of ['PORT_API', 'PORT_BATCH']) {
+		if (env[name] !== undefined && !/^[0-9]+$/.test(String(env[name])))
+			throw new Error(`${name} must be a port number`);
+		if (env[name] !== undefined && (Number(env[name]) < 1 || Number(env[name]) > 65535))
+			throw new Error(`${name} must be between 1 and 65535`);
+	}
+	if (env.TRUST_PROXY && env.TRUST_PROXY !== 'loopback') throw new Error('TRUST_PROXY must be unset or loopback');
 	const secret = env.JWT_SECRET ?? env.SECRET_TOKEN;
 	if (typeof secret !== 'string' || secret.length < 32)
 		throw new Error('Set SECRET_TOKEN or JWT_SECRET to at least 32 random characters');

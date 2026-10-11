@@ -1,0 +1,9 @@
+[Unit]
+Description=CreatorHub database and upload backup
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+ExecStart=/bin/bash /srv/Sean/creatorhub/current/backend/deploy/backup.sh

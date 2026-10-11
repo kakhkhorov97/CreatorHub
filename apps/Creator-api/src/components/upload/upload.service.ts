@@ -5,7 +5,7 @@ import { mkdir, open, rename, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { FileUpload } from 'graphql-upload';
+import { FileUpload } from '../../libs/dto/upload/file-upload';
 import { v4 as uuidv4 } from 'uuid';
 import { User } from '../../libs/dto/user/user';
 import { requireActive } from '../../libs/helpers/policy';

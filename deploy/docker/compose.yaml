@@ -1,0 +1,123 @@
+name: creatorhub
+
+x-backend: &backend
+  image: creatorhub-backend:${CREATORHUB_RELEASE:?Set an immutable release tag}
+  build:
+    context: ../../
+    target: runtime
+  env_file: ${CREATORHUB_ROOT:-/srv/Sean/creatorhub}/shared/backend.env
+  environment:
+    NODE_ENV: production
+    LISTEN_HOST: 127.0.0.1
+    PORT_API: '7001'
+    PORT_BATCH: '7002'
+    TRUST_PROXY: loopback
+    UPLOAD_DIR: /app/uploads
+  network_mode: host
+  init: true
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:uid=1000,gid=1000,mode=1770
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+
+services:
+  api:
+    <<: *backend
+    volumes:
+      - type: bind
+        source: ${CREATORHUB_ROOT:-/srv/Sean/creatorhub}/shared/uploads
+        target: /app/uploads
+        bind:
+          create_host_path: false
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:7001/health',{signal:AbortSignal.timeout(4000)}).then(async r=>{if(!r.ok||(await r.json()).status!=='ok')process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  worker:
+    <<: *backend
+    command: [node, dist/apps/Creator-batch/main.js]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:7002/',{signal:AbortSignal.timeout(4000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    image: creatorhub-frontend:${CREATORHUB_RELEASE:?Set an immutable release tag}
+    build:
+      context: ${CREATORHUB_FRONTEND_CONTEXT:-../../../CreatorHUb-FrontEnd}
+      args:
+        NEXT_PUBLIC_API_GRAPHQL_URL: ${NEXT_PUBLIC_API_GRAPHQL_URL:?Set the HTTPS API URL}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+        NEXT_PUBLIC_TELEGRAM_CLIENT_ID: ${NEXT_PUBLIC_TELEGRAM_CLIENT_ID:-}
+        NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN: ${NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN:-}
+        NEXT_PUBLIC_POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST:-https://us.i.posthog.com}
+    env_file: ${CREATORHUB_ROOT:-/srv/Sean/creatorhub}/shared/frontend.env
+    environment:
+      NODE_ENV: production
+      TRUST_PROXY: loopback
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:uid=1000,gid=1000,mode=1770
+      - /app/.next/cache:uid=1000,gid=1000,mode=0770
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:7007/account/sign-in',{signal:AbortSignal.timeout(4000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  tools:
+    profiles: [tools]
+    image: creatorhub-tools:${CREATORHUB_RELEASE:?Set an immutable release tag}
+    build:
+      context: ../../
+      target: tools
+    env_file: ${CREATORHUB_ROOT:-/srv/Sean/creatorhub}/shared/backend.env
+    environment:
+      NODE_ENV: production
+    network_mode: host
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]

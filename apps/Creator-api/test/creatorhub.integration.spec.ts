@@ -290,15 +290,13 @@ describe('CreatorHub workflow', () => {
 		});
 		const identity = await db.model('AuthIdentity').findOne({ userId: member.user._id, provider: 'EMAIL' });
 		for (const email of ['single-email@example.com', 'second-email@example.com']) {
-			expect(
-				(
-					await gql(
-						'mutation($input:LinkEmailInput!){linkEmail(input:$input){_id}}',
-						{ input: { email, password: 'Second-password-123' } },
-						member.accessToken,
-					)
-				).errors[0].message,
-			).toContain('Use Change email');
+			const result = await gql(
+				'mutation($input:LinkEmailInput!){linkEmail(input:$input){_id}}',
+				{ input: { email, password: 'Second-password-123' } },
+				member.accessToken,
+			);
+			expect(result).toEqual(expect.objectContaining({ errors: expect.any(Array) }));
+			expect(result.errors[0].message).toContain('Use Change email');
 		}
 		expect(
 			(

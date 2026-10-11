@@ -1,6 +1,7 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Resolver } from '@nestjs/graphql';
-import { GraphQLUpload, FileUpload } from 'graphql-upload';
+import GraphQLUpload from 'graphql-upload/GraphQLUpload.js';
+import type { FileUpload } from '../../libs/dto/upload/file-upload';
 import { User } from '../../libs/dto/user/user';
 import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { AuthGuard } from '../auth/guards/auth.guard';

@@ -1,0 +1,14 @@
+[Unit]
+Description=CreatorHub readiness monitor
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/bin/node /srv/Sean/creatorhub/current/backend/deploy/monitor.cjs
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/Sean/creatorhub/shared/monitoring

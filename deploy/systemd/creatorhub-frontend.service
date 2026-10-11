@@ -1,0 +1,30 @@
+[Unit]
+Description=CreatorHub frontend
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=creatorhub
+Group=creatorhub
+WorkingDirectory=/srv/Sean/creatorhub/current/frontend
+EnvironmentFile=/srv/Sean/creatorhub/shared/frontend.env
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 7007
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/Sean/creatorhub/shared/uploads /srv/Sean/creatorhub/current/frontend/.next
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=creatorhub-frontend
+
+[Install]
+WantedBy=multi-user.target

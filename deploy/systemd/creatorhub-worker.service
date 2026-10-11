@@ -1,0 +1,30 @@
+[Unit]
+Description=CreatorHub worker
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=creatorhub
+Group=creatorhub
+WorkingDirectory=/srv/Sean/creatorhub/current/backend
+EnvironmentFile=/srv/Sean/creatorhub/shared/backend.env
+ExecStart=/usr/bin/node dist/apps/Creator-batch/main.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/Sean/creatorhub/shared/uploads
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=creatorhub-worker
+
+[Install]
+WantedBy=multi-user.target
