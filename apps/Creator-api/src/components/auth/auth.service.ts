@@ -278,7 +278,7 @@ export class AuthService {
 						userId: user._id,
 						authIdentityId: identity._id,
 						refreshTokenHash: tokenHash(refreshToken),
-						expiresAt: new Date(Date.now() + 30 * 86400000),
+						expiresAt: new Date(Date.now() + 15 * 86400000),
 					},
 				],
 				{ session: transaction },

@@ -8,12 +8,12 @@ import { GraphQLResolveInfo } from 'graphql';
 const securityGroups: Record<string, string> = {
 	login: 'login',
 	loginPhone: 'login',
-	beginSocialLogin: 'login',
+	beginSocialLogin: 'social-preparation',
 	loginSocial: 'login',
 	loginGoogle: 'login',
 	loginTelegram: 'login',
 	loginKakao: 'login',
-	beginKakaoLogin: 'login',
+	beginKakaoLogin: 'social-preparation',
 	completeSocialSignup: 'registration',
 	completeGoogleSignup: 'registration',
 	register: 'registration',
@@ -94,8 +94,9 @@ export class RateLimitGuard implements CanActivate {
 		const address = request.ip || 'unknown';
 		const security = securityGroups[field];
 		if (security) {
-			// Security attempts stay IP-limited even when a caller supplies a token.
-			this.consume(`ip:${address}:${security}`, 10, now);
+			// Page-mounted social challenges must not consume actual login attempts.
+			// Both quotas stay IP-limited even when a caller supplies a token.
+			this.consume(`ip:${address}:${security}`, security === 'social-preparation' ? 30 : 10, now);
 			return true;
 		}
 		if (field === 'refreshSession') {

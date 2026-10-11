@@ -1387,11 +1387,28 @@ describe('CreatorHub workflow', () => {
 	});
 
 	it('rejects expired sessions before TTL cleanup and retains deleted-account email reservations', async () => {
+		const startedAt = Date.now();
 		const expired = await account('expired@example.com');
+		const session = await db.model('AuthSession').findOne({ userId: expired.user._id });
+		const lifetime = 15 * 86400000;
+		expect(session.expiresAt.getTime()).toBeGreaterThanOrEqual(startedAt + lifetime);
+		expect(session.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + lifetime);
+		const refreshed = await ok(
+			'mutation($token:String!){refreshSession(refreshToken:$token){accessToken refreshToken}}',
+			{ token: expired.refreshToken },
+		);
+		expect((await db.model('AuthSession').findById(session._id)).expiresAt.getTime()).toBe(session.expiresAt.getTime());
 		await db
 			.model('AuthSession')
 			.updateMany({ userId: expired.user._id }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
 		expect((await gql('query{me{_id}}', {}, expired.accessToken)).errors).toBeDefined();
+		expect(
+			(
+				await gql('mutation($token:String!){refreshSession(refreshToken:$token){accessToken}}', {
+					token: refreshed.refreshSession.refreshToken,
+				})
+			).errors,
+		).toBeDefined();
 		const deleted = await account('deleted@example.com');
 		await ok('mutation{deleteMyAccount}', {}, deleted.accessToken);
 		expect((await gql('query{me{_id}}', {}, deleted.accessToken)).errors).toBeDefined();

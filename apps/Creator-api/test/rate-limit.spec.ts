@@ -42,6 +42,27 @@ describe('GraphQL rate limits', () => {
 		await expect(guard.canActivate(context('refreshSession'))).rejects.toMatchObject({ status: 429 });
 	});
 
+	it('limits social preparation separately from email and social login attempts', async () => {
+		for (let n = 0; n < 30; n++)
+			await expect(guard.canActivate(context(n % 2 ? 'beginSocialLogin' : 'beginKakaoLogin'))).resolves.toBe(true);
+		await expect(guard.canActivate(context('beginSocialLogin'))).rejects.toMatchObject({ status: 429 });
+		await expect(guard.canActivate(context('beginKakaoLogin'))).rejects.toMatchObject({ status: 429 });
+		const loginFields = ['login', 'loginGoogle', 'loginTelegram', 'loginKakao'];
+		for (let n = 0; n < 10; n++)
+			await expect(guard.canActivate(context(loginFields[n % loginFields.length]))).resolves.toBe(true);
+		await expect(guard.canActivate(context('loginGoogle'))).rejects.toMatchObject({ status: 429 });
+		await expect(guard.canActivate(context('beginSocialLogin', undefined, '127.0.0.2'))).resolves.toBe(true);
+		jest.advanceTimersByTime(60000);
+		await expect(guard.canActivate(context('beginSocialLogin'))).resolves.toBe(true);
+		await expect(guard.canActivate(context('loginTelegram'))).resolves.toBe(true);
+	});
+
+	it('allows social preparation after actual login attempts reach their limit', async () => {
+		for (let n = 0; n < 10; n++) await guard.canActivate(context('loginGoogle'));
+		await expect(guard.canActivate(context('login'))).rejects.toMatchObject({ status: 429 });
+		await expect(guard.canActivate(context('beginSocialLogin'))).resolves.toBe(true);
+	});
+
 	it('separates signed accounts sharing an IP, while keeping each account limited across sessions', async () => {
 		const a = jwt.sign({ sub: userA, sid: 'first' });
 		const a2 = jwt.sign({ sub: userA, sid: 'second' });
