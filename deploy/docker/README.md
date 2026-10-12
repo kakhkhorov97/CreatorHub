@@ -82,6 +82,35 @@ curl --fail --output /dev/null http://127.0.0.1:7007/account/sign-in
 
 Install only the CreatorHub Nginx site using the HTTP/certificate/HTTPS steps in ../README.md. The proxy templates keep the same localhost ports. Always run nginx -t before reloading; leave hadijam and default untouched. Containers never bind ports 80 or 443.
 
+## Short everyday commands
+
+The `creatorhub.sh` helper controls the existing API, worker and frontend containers by their exact Compose project and service labels. It excludes one-off containers and refuses start/stop if any service is missing or has multiple matches. It does not read production environment files, build images, recreate containers, or control Nginx and other projects.
+
+After the helper reaches the VPS checkout, install it as a root-owned executable. Installation does not start the website:
+
+```bash
+sudo install -o root -g root -m 0755 /srv/Sean/creatorhub/backend/deploy/docker/creatorhub.sh /usr/local/bin/creatorhub
+creatorhub status
+```
+
+Run these from any directory as your sudo-enabled account:
+
+```bash
+creatorhub status
+creatorhub health
+creatorhub logs api
+creatorhub logs frontend
+creatorhub logs worker --follow
+creatorhub stop
+creatorhub start
+```
+
+`status` shows container state, health and image. Stopped containers report `not running`, rather than showing their previous health result. `health` checks HTTP 200 at the public HTTPS sign-in page and API health endpoint, with TLS verification and bounded timeouts. It does not test login, uploads or every GraphQL operation. It returns a failure exit code if either check fails. A stopped site normally fails this check.
+
+Logs show the most recent 100 lines; `--follow` streams new lines until Ctrl+C, which ends log viewing without stopping the container. Docker commands request sudo when required. Start resumes the existing containers with their existing images and settings. Pulling Git changes does not update those images; use the release build/update procedure for new code. Stop allows 30 seconds for shutdown and preserves containers and persistent data.
+
+Verify the helper locally with `node --test deploy/docker/creatorhub.test.cjs`. The tests mock Docker, sudo and curl, and do not control real containers or contact the website. Live VPS verification is still required after installation.
+
 ## Database administration
 
 The production indexes and initial categories have already been prepared. Build the optional administration image when needed:
