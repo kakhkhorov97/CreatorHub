@@ -875,6 +875,14 @@ describe('CreatorHub workflow', () => {
 		expect((await upload(client.accessToken, 'avatar', png, 'text/html')).body.errors).toBeDefined();
 		const oversized = await upload(client.accessToken, 'avatar', Buffer.alloc(10_000_001));
 		expect(oversized.body.errors).toBeDefined();
+		const serviceImage = await upload(client.accessToken, 'service');
+		expect(serviceImage.body.errors).toBeUndefined();
+		expect(serviceImage.body.data.imageUploader).toContain(`/uploads/${client.user._id}/service/`);
+		// Service images are images only; project media may also be a video.
+		expect(
+			(await upload(client.accessToken, 'service', Buffer.from('000000206674797069736f6d', 'hex'), 'video/mp4')).body
+				.errors,
+		).toBeDefined();
 		expect(await readdir(join(uploadDirectory, '.pending'))).toEqual([]);
 	});
 
@@ -980,6 +988,26 @@ describe('CreatorHub workflow', () => {
 		});
 		expect(assistant.discoverCreators.mode).toBe('KEYWORD');
 		expect(assistant.discoverCreators.creators).toHaveLength(1);
+	});
+
+	it('returns creator work covers and falls back to the newest project cover for services', async () => {
+		const cover = `https://media.example.com/creatorhub/${creator.user._id}/bookstore.webp`;
+		const creators = await ok('query{getCreators{list{_id workImageUrls}}}');
+		expect(creators.getCreators.list.find((item: any) => item._id === creatorId).workImageUrls).toEqual([cover]);
+		const services = await ok('query{getServices{list{_id imageUrl}}}');
+		expect(services.getServices.list.find((item: any) => item._id === serviceId).imageUrl).toBe(cover);
+		// The owner's own list keeps the stored value, so the editor never shows a borrowed image.
+		const own = await ok('query{getMyServices{list{_id imageUrl}}}', {}, creator.accessToken);
+		expect(own.getMyServices.list.find((item: any) => item._id === serviceId).imageUrl).toBeNull();
+		// An uploaded service image wins over the fallback.
+		const uploaded = `https://media.example.com/creatorhub/${creator.user._id}/service-cover.webp`;
+		await approvedFixture(
+			'mutation($id:ID!,$input:UpdateServiceInput!){updateService(serviceId:$id,input:$input){imageUrl}}',
+			{ id: serviceId, input: { imageUrl: uploaded } },
+			creator.accessToken,
+		);
+		const updated = await ok('query{getServices{list{_id imageUrl}}}');
+		expect(updated.getServices.list.find((item: any) => item._id === serviceId).imageUrl).toBe(uploaded);
 	});
 
 	it('deduplicates concurrent likes and saves, and forbids self-likes', async () => {

@@ -34,6 +34,14 @@ const CreatorServiceSchema = new Schema(
 			maxlength: 10000,
 		},
 
+		imageUrl: {
+			type: String,
+			required: false,
+			trim: true,
+			minlength: 1,
+			maxlength: 2048,
+		},
+
 		pricingType: {
 			type: String,
 			required: true,

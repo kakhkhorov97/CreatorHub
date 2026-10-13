@@ -20,6 +20,9 @@ export class CreatorService extends MutableEntity {
 	@Field(() => String, { nullable: true })
 	description?: string;
 
+	@Field(() => String, { nullable: true })
+	imageUrl?: string;
+
 	@Field(() => PricingType)
 	pricingType!: PricingType;
 

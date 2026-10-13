@@ -26,10 +26,11 @@ export class UploadService {
 
 	public async imageUploader(user: User, file: FileUpload, target: string): Promise<string> {
 		requireActive(user);
-		if (!['avatar', 'project'].includes(target))
-			throw new BadRequestException('Choose avatar or project as the upload target');
+		if (!['avatar', 'project', 'service'].includes(target))
+			throw new BadRequestException('Choose avatar, project or service as the upload target');
 		const extension = extensions[file.mimetype];
-		if (!extension || (target === 'avatar' && !file.mimetype.startsWith('image/')))
+		// Only project media may be a video; avatars and service images are images.
+		if (!extension || (target !== 'project' && !file.mimetype.startsWith('image/')))
 			throw new BadRequestException('Unsupported upload type');
 		const root = resolve(this.config.get<string>('UPLOAD_DIR') ?? 'uploads');
 		const directory = join(root, String(user._id), target);

@@ -45,6 +45,7 @@ const fields: Record<Kind, string[]> = {
 	SERVICE: [
 		'title',
 		'description',
+		'imageUrl',
 		'pricingType',
 		'startingPrice',
 		'currency',
@@ -183,6 +184,7 @@ export class ReviewService {
 							);
 					} else {
 						check(target.deliverables.length, 'Deliverables are required');
+						if (target.imageUrl) this.media.validate(target.imageUrl, String(owner._id));
 						check(target.pricingType !== 'STARTING_AT' || target.startingPrice != null, 'A starting price is required');
 						check(
 							target.pricingType !== 'CUSTOM_QUOTE' || target.startingPrice == null,

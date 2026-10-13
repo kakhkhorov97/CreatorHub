@@ -46,6 +46,10 @@ export class CreatorProfile extends MutableEntity {
 
 	@Field(() => Date, { nullable: true })
 	deletedAt?: Date;
+
+	// Covers of the three newest published projects. Only the creators list fills this.
+	@Field(() => [String], { nullable: true })
+	workImageUrls?: string[];
 }
 
 @ObjectType()

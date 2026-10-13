@@ -218,6 +218,43 @@ describe('Manual content approval', () => {
 		);
 	});
 
+	it('keeps a new service image private until approval and refuses images outside the owner prefix', async () => {
+		const own = `https://media.example.com/creatorhub/${creator.user._id}/service-cover.webp`;
+		await ok(
+			'mutation($id:ID!,$input:UpdateServiceInput!){updateService(serviceId:$id,input:$input){imageUrl}}',
+			{ id: serviceId, input: { imageUrl: own } },
+			creator.accessToken,
+		);
+		expect(
+			(await ok('query($id:ID!){getService(serviceId:$id){imageUrl}}', { id: serviceId })).getService.imageUrl,
+		).toBe(null);
+		const pending = (await reviews()).find((review: any) => review.kind === 'SERVICE');
+		expect(JSON.parse(pending.preview).imageUrl).toBe(own);
+		await decide(pending, true);
+		expect(
+			(await ok('query($id:ID!){getService(serviceId:$id){imageUrl}}', { id: serviceId })).getService.imageUrl,
+		).toBe(own);
+		// Approval re-checks ownership, so a borrowed storage prefix cannot be published.
+		await ok(
+			'mutation($id:ID!,$input:UpdateServiceInput!){updateService(serviceId:$id,input:$input){imageUrl}}',
+			{ id: serviceId, input: { imageUrl: `https://media.example.com/creatorhub/${outsider.user._id}/stolen.webp` } },
+			creator.accessToken,
+		);
+		const borrowed = (await reviews()).find((review: any) => review.kind === 'SERVICE');
+		expect(
+			(
+				await gql(
+					'mutation($id:ID!,$revision:DateTime!){adminDecideContentReview(id:$id,approve:true,revision:$revision){status}}',
+					{ id: borrowed._id, revision: borrowed.updatedAt },
+					admin.accessToken,
+				)
+			).errors,
+		).toBeDefined();
+		expect(
+			(await ok('query($id:ID!){getService(serviceId:$id){imageUrl}}', { id: serviceId })).getService.imageUrl,
+		).toBe(own);
+	});
+
 	it('rejects stale approval after a draft was edited or removed', async () => {
 		await ok(
 			'mutation($id:ID!){setServiceStatus(serviceId:$id,status:PAUSED){status}}',

@@ -8,8 +8,10 @@ import {
 	IsInt,
 	IsMongoId,
 	IsString,
+	IsUrl,
 	Length,
 	Max,
+	MaxLength,
 	Min,
 	ValidateIf,
 } from 'class-validator';
@@ -34,6 +36,14 @@ export class CreateServiceInput {
 	@IsString()
 	@Length(1, 10000)
 	description?: string;
+
+	@Field(() => String, { nullable: true })
+	@ValidateIf((_object, value) => value !== undefined)
+	@Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+	@IsString()
+	@MaxLength(2048)
+	@IsUrl({ protocols: ['https', 'http'], require_protocol: true, require_tld: false, disallow_auth: true })
+	imageUrl?: string;
 
 	@Field(() => PricingType, { nullable: true })
 	@ValidateIf((_object, value) => value !== undefined)

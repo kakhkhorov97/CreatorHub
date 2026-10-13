@@ -46,6 +46,31 @@ export class DiscoveryService {
 		};
 	}
 
+	// The newest published covers of one creator, used for the work strip and the service image fallback.
+	// Runs after pagination so it only touches one page of rows, through ix_projects_creator.
+	private covers(localField: string, as: string, limit: number): PipelineStage.Lookup {
+		return {
+			$lookup: {
+				from: 'portfolioProjects',
+				localField,
+				foreignField: 'creatorId',
+				as,
+				pipeline: [
+					{
+						$match: {
+							status: ProjectStatus.PUBLISHED,
+							deletedAt: { $exists: false },
+							coverImageUrl: { $type: 'string' },
+						},
+					},
+					{ $sort: { publishedAt: -1, _id: -1 } },
+					{ $limit: limit },
+					{ $project: { coverImageUrl: 1 } },
+				],
+			},
+		};
+	}
+
 	public async getCreators(input: DiscoveryInput) {
 		await this.validate(input);
 		const { offset, limit } = page(input);
@@ -87,7 +112,13 @@ export class DiscoveryService {
 			{ $sort: { publishedAt: -1, _id: -1 } },
 			{
 				$facet: {
-					list: [{ $skip: offset }, { $limit: limit }, { $unset: ['_owner', '_offers'] }],
+					list: [
+						{ $skip: offset },
+						{ $limit: limit },
+						this.covers('_id', '_work', 3),
+						{ $set: { workImageUrls: '$_work.coverImageUrl' } },
+						{ $unset: ['_owner', '_offers', '_work'] },
+					],
 					metaCounter: [{ $count: 'total' }],
 				},
 			},
@@ -166,7 +197,13 @@ export class DiscoveryService {
 			{ $sort: { createdAt: -1, _id: -1 } },
 			{
 				$facet: {
-					list: [{ $skip: offset }, { $limit: limit }, { $unset: ['_owner', '_creator'] }],
+					list: [
+						{ $skip: offset },
+						{ $limit: limit },
+						this.covers('creatorId', '_fallback', 1),
+						{ $set: { imageUrl: { $ifNull: ['$imageUrl', { $arrayElemAt: ['$_fallback.coverImageUrl', 0] }] } } },
+						{ $unset: ['_owner', '_creator', '_fallback'] },
+					],
 					metaCounter: [{ $count: 'total' }],
 				},
 			},
