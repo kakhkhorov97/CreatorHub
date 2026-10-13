@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { GraphQLModule } from '@nestjs/graphql';
+import { ContactModule } from './components/contact/contact.module';
 import { AppController } from './app.controller';
 import { AppResolver } from './app.resolver';
 import { AppService } from './app.service';
@@ -31,6 +32,7 @@ import { graphqlRequestLogger } from './libs/interceptors/request-logger';
 		DatabaseModule,
 		AuthModule,
 		ComponentsModule,
+		ContactModule,
 	],
 	controllers: [AppController],
 	providers: [

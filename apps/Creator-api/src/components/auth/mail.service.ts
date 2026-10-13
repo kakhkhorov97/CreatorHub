@@ -47,6 +47,30 @@ export class MailService {
 		this.logger.log('Development email written to .local/mail');
 	}
 
+	async sendContact(name: string, email: string, message: string): Promise<void> {
+		try {
+			const response = await fetch('https://api.resend.com/emails', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${this.config.getOrThrow<string>('RESEND_API_KEY')}`,
+				},
+				body: JSON.stringify({
+					from: this.config.getOrThrow<string>('RESEND_FROM_EMAIL'),
+					to: ['kakhkhorov97@gmail.com'],
+					reply_to: email,
+					subject: 'CreatorHub contact message',
+					text: `Name: ${name}\nEmail: ${email}\n\n${message}`,
+				}),
+				signal: AbortSignal.timeout(10000),
+				redirect: 'error',
+			});
+			if (!response.ok) throw new Error('Delivery failed');
+		} catch {
+			throw new ServiceUnavailableException('Your message could not be delivered. Please try again later.');
+		}
+	}
+
 	private async sendWithResend(email: string, purpose: AuthTokenPurpose, actionUrl: string): Promise<void> {
 		const content = {
 			[AuthTokenPurpose.EMAIL_VERIFY]: {

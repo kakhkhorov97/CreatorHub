@@ -31,6 +31,6 @@ import { MailService } from './mail.service';
 		}),
 	],
 	providers: [RolesGuard, SocialAuthService, AuthService, AuthGuard, AuthResolver, MailService],
-	exports: [RolesGuard, AuthService, AuthGuard, JwtModule],
+	exports: [MailService, RolesGuard, AuthService, AuthGuard, JwtModule],
 })
 export class AuthModule {}

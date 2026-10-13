@@ -39,3 +39,7 @@ uploads/
 /deploy/backups/
 *.archive.gz
 uploads.tar.gz
+
+# Local AI assistant instructions and settings
+/CLAUDE.md
+/.claude/
