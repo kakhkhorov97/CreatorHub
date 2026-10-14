@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { LoggingInterceptor } from '../src/libs/interceptors/logging.interceptor';
 import { configureUploads } from '../src/components/upload/upload.middleware';
 import { mkdtemp, rm, readdir } from 'node:fs/promises';
@@ -24,6 +25,7 @@ describe('CreatorHub workflow', () => {
 	let db: Connection;
 	let uploadDirectory: string;
 	const mail = new Map<string, string>();
+	const failingMail = new Set<string>();
 	let creator: any, client: any, outsider: any, admin: any;
 	let categoryId: string, creatorId: string, projectId: string, serviceId: string;
 
@@ -140,6 +142,8 @@ describe('CreatorHub workflow', () => {
 			.overrideProvider(MailService)
 			.useValue({
 				sendToken: async (email: string, purpose: string, token: string) => {
+					if (failingMail.has(email))
+						throw new ServiceUnavailableException('Email delivery is unavailable. Request a new email later.');
 					mail.set(`${email}:${purpose}`, token);
 				},
 			})
@@ -192,6 +196,26 @@ describe('CreatorHub workflow', () => {
 			client.accessToken,
 		);
 		expect(nullInput.errors).toBeDefined();
+	});
+
+	it('keeps the account and says so when the verification email cannot be sent', async () => {
+		const operation = 'mutation($input:RegisterInput!){register(input:$input){accessToken}}';
+		const input = {
+			email: 'undelivered@example.com',
+			password: 'Portfolio-test-password-123',
+			displayName: 'Undelivered',
+			phoneNumber: '+821023450000',
+		};
+		failingMail.add(input.email);
+		expect((await gql(operation, { input })).errors?.[0].message).toBe(
+			'Your account was created, but the verification email could not be sent. Request a new email.',
+		);
+		expect(await db.model('AuthIdentity').countDocuments({ providerSubject: input.email })).toBe(1);
+		failingMail.delete(input.email);
+		await ok('mutation($input:EmailInput!){requestEmailVerification(input:$input)}', {
+			input: { email: input.email },
+		});
+		await ok('mutation($token:String!){verifyEmail(token:$token)}', { token: mail.get(`${input.email}:EMAIL_VERIFY`) });
 	});
 
 	it('requires a valid private contact phone at email signup and blocks phone authentication', async () => {
@@ -818,7 +842,7 @@ describe('CreatorHub workflow', () => {
 		).toBeDefined();
 	});
 
-	it('handles concurrent onboarding and refuses to recreate a deleted profile', async () => {
+	it('handles concurrent onboarding and reopens a deleted profile as a draft', async () => {
 		const person = await account('onboarding-retry@example.com');
 		const operation = 'mutation($input:CreateCreatorInput!){createCreatorProfile(input:$input){_id}}';
 		const results = await Promise.all([
@@ -827,9 +851,18 @@ describe('CreatorHub workflow', () => {
 		]);
 		expect(results[0].createCreatorProfile._id).toBe(results[1].createCreatorProfile._id);
 		await ok('mutation{deleteCreatorProfile}', {}, person.accessToken);
-		expect((await gql(operation, { input: { slug: 'retry-deleted' } }, person.accessToken)).errors?.[0].message).toBe(
-			'This creator profile was deleted and cannot be recreated',
-		);
+		// Deleting the creator profile never touches the account: the person can still sign in and apply again.
+		expect((await ok('{me{_id status}}', {}, person.accessToken)).me).toMatchObject({
+			_id: person.user._id,
+			status: 'ACTIVE',
+		});
+		const reopened = await ok(operation, { input: { slug: 'retry-deleted' } }, person.accessToken);
+		expect(reopened.createCreatorProfile._id).toBe(results[0].createCreatorProfile._id);
+		expect(await db.model('CreatorProfile').findById(reopened.createCreatorProfile._id).lean()).toMatchObject({
+			slug: 'retry-deleted',
+			status: 'DRAFT',
+		});
+		expect((await ok('{myCreatorProfile{_id status}}', {}, person.accessToken)).myCreatorProfile.status).toBe('DRAFT');
 	});
 
 	it('uploads local media with ownership, type and path checks', async () => {
