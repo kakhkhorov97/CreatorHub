@@ -1468,6 +1468,13 @@ describe('CreatorHub workflow', () => {
 				})
 			).errors,
 		).toBeDefined();
+		const photo = await account('photo@example.com');
+		await db.model('User').updateOne({ _id: photo.user._id }, { $set: { avatarUrl: 'https://example.com/a.png' } });
+		expect(
+			(await ok('mutation{removeMyAvatar{avatarUrl}}', {}, photo.accessToken)).removeMyAvatar.avatarUrl,
+		).toBeNull();
+		expect((await db.model('User').findById(photo.user._id).lean()).avatarUrl).toBeUndefined();
+		expect((await gql('mutation{removeMyAvatar{_id}}', {})).errors).toBeDefined();
 		const deleted = await account('deleted@example.com');
 		await ok('mutation{deleteMyAccount}', {}, deleted.accessToken);
 		expect((await gql('query{me{_id}}', {}, deleted.accessToken)).errors).toBeDefined();

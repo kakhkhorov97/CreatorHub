@@ -35,6 +35,17 @@ export class UsersService {
 		);
 	}
 
+	// Back to the default avatar. The uploaded file stays on disk; only the reference is cleared.
+	async removeAvatar(currentUser: User) {
+		return requireRecord(
+			await this.users.findOneAndUpdate(
+				{ _id: currentUser._id, status: UserStatus.ACTIVE },
+				{ $unset: { avatarUrl: 1 } },
+				{ new: true },
+			),
+		);
+	}
+
 	async delete(currentUser: User) {
 		await this.connection.transaction(async (session) => {
 			await this.users.updateOne(
