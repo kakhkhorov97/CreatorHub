@@ -17,12 +17,14 @@ import { NEW_PASSWORD_MESSAGE, NEW_PASSWORD_PATTERN } from '../../helpers/passwo
 import { AuthProvider } from '../../enums/auth-provider.enum';
 import { Locale } from '../../enums/locale.enum';
 
+const PHONE_FORMAT = 'Enter a valid phone number with its country code, for example +82 10 1234 5678.';
+
 @InputType()
 export class RegisterInput {
 	@Field(() => String)
 	@Transform(({ value }) => (typeof value === 'string' ? normalizePhone(value) : value))
-	@Matches(/^\+[1-9]\d{7,14}$/)
-	@IsPhoneNumber()
+	@Matches(/^\+[1-9]\d{7,14}$/, { message: PHONE_FORMAT })
+	@IsPhoneNumber(undefined, { message: PHONE_FORMAT })
 	phoneNumber!: string;
 
 	@Field(() => String)
@@ -90,8 +92,8 @@ export class EmailInput {
 export class PhoneLoginInput {
 	@IsNotEmpty()
 	@Transform(({ value }) => (typeof value === 'string' ? normalizePhone(value) : value))
-	@Matches(/^\+[1-9]\d{7,14}$/)
-	@IsPhoneNumber()
+	@Matches(/^\+[1-9]\d{7,14}$/, { message: PHONE_FORMAT })
+	@IsPhoneNumber(undefined, { message: PHONE_FORMAT })
 	@Field(() => String)
 	phoneNumber!: string;
 
@@ -125,8 +127,8 @@ export class SocialLoginInput {
 	@Field(() => String, { nullable: true })
 	@ValidateIf((_object, value) => value !== undefined)
 	@Transform(({ value }) => (typeof value === 'string' ? normalizePhone(value) : value))
-	@Matches(/^\+[1-9]\d{7,14}$/)
-	@IsPhoneNumber()
+	@Matches(/^\+[1-9]\d{7,14}$/, { message: PHONE_FORMAT })
+	@IsPhoneNumber(undefined, { message: PHONE_FORMAT })
 	phoneNumber?: string;
 
 	@IsIn([AuthProvider.GOOGLE, AuthProvider.TELEGRAM, AuthProvider.KAKAO])

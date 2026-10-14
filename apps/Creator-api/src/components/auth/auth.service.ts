@@ -1,8 +1,15 @@
+import { Message } from '../../libs/enums/common.enum';
 import { createHash } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+	BadRequestException,
+	ConflictException,
+	Injectable,
+	ServiceUnavailableException,
+	UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
@@ -91,7 +98,14 @@ export class AuthService {
 			input.email,
 			await this.hashPassword(input.password),
 		);
-		await this.issueToken(identity, AuthTokenPurpose.EMAIL_VERIFY);
+		try {
+			await this.issueToken(identity, AuthTokenPurpose.EMAIL_VERIFY);
+		} catch (error) {
+			// The account exists at this point. Say so, so the person resends instead of registering again.
+			if (error instanceof ServiceUnavailableException)
+				throw new ServiceUnavailableException(Message.VERIFICATION_EMAIL_NOT_SENT);
+			throw error;
+		}
 		return this.createSession(user, identity);
 	}
 

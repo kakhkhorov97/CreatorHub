@@ -1,8 +1,7 @@
 import { ReviewService } from '../review/review.service';
-import { Message } from '../../libs/enums/common.enum';
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model } from 'mongoose';
+import { Connection, HydratedDocument, Model } from 'mongoose';
 import { CITIES } from '../../libs/dto/common/locations';
 import { CreatorProfile } from '../../libs/dto/creator/creator-profile';
 import { CreateCreatorInput } from '../../libs/dto/creator/creator.input';
@@ -41,7 +40,8 @@ export class CreatorsService {
 	async create(currentUser: User, input: CreateCreatorInput) {
 		requireActive(currentUser);
 		const existing = await this.profiles.findOne({ userId: currentUser._id });
-		if (existing) return this.onboardingProfile(existing);
+		if (existing?.deletedAt) return this.restore(existing, input);
+		if (existing) return existing;
 		await this.validate(input);
 		try {
 			return await this.profiles.create({ ...defined(input), userId: currentUser._id });
@@ -49,13 +49,16 @@ export class CreatorsService {
 			if (!duplicateKey(error)) throw error;
 			const existing = await this.profiles.findOne({ userId: currentUser._id });
 			if (!existing) throw error;
-			return this.onboardingProfile(existing);
+			return existing.deletedAt ? this.restore(existing, input) : existing;
 		}
 	}
 
-	private onboardingProfile(profile: CreatorProfile) {
-		if (profile.deletedAt) throw new ConflictException(Message.PROFILE_DELETED);
-		return profile;
+	// One profile per user: applying again after deleting reopens the same record as a new draft,
+	// so it goes through admin review again before anything is public.
+	private async restore(profile: HydratedDocument<CreatorProfile>, input: CreateCreatorInput) {
+		await this.validate(input);
+		Object.assign(profile, defined(input), { status: ProfileStatus.DRAFT, deletedAt: undefined });
+		return saveRevision(this.profiles, profile);
 	}
 
 	async update(currentUser: User, input: UpdateCreatorInput) {
