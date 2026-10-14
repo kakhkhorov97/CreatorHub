@@ -24,6 +24,11 @@ export class UsersResolver {
 		return this.users.update(currentUser, input);
 	}
 
+	@Mutation(() => User)
+	removeMyAvatar(@AuthMember() currentUser: User) {
+		return this.users.removeAvatar(currentUser);
+	}
+
 	@Mutation(() => Boolean)
 	deleteMyAccount(@AuthMember() currentUser: User) {
 		return this.users.delete(currentUser);
