@@ -1,0 +1,121 @@
+name: Deploy CreatorHub
+on:
+  workflow_dispatch:
+    inputs:
+      backend_sha:
+        description: 'Optional full backend commit SHA on develop; blank selects latest develop'
+        required: false
+        type: string
+      frontend_sha:
+        description: 'Optional full frontend commit SHA on develop; blank selects latest develop'
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: creatorhub-production-deployment
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    outputs:
+      backend_sha: ${{ steps.select.outputs.backend_sha }}
+      frontend_sha: ${{ steps.select.outputs.frontend_sha }}
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_SITE_URL: https://creatorhub.site
+      NEXT_PUBLIC_API_GRAPHQL_URL: https://api.creatorhub.site/graphql
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: kakhkhorov97/CreatorHub
+          ref: develop
+          path: backend
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: kakhkhorov97/CreatorHub-next
+          ref: develop
+          path: frontend
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select immutable commit pair
+        id: select
+        env:
+          REQUESTED_BACKEND: ${{ inputs.backend_sha }}
+          REQUESTED_FRONTEND: ${{ inputs.frontend_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          select_commit() {
+            local repo=$1 requested=$2 sha
+            sha=${requested:-$(git -C "$repo" rev-parse HEAD)}
+            [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo 'Use a full lowercase commit SHA'; exit 1; }
+            git -C "$repo" cat-file -e "$sha^{commit}"
+            git -C "$repo" merge-base --is-ancestor "$sha" origin/develop
+            git -C "$repo" checkout --detach "$sha"
+            echo "${repo}_sha=$sha" >> "$GITHUB_OUTPUT"
+            echo "$repo: $sha" >> "$GITHUB_STEP_SUMMARY"
+          }
+          select_commit backend "$REQUESTED_BACKEND"
+          select_commit frontend "$REQUESTED_FRONTEND"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Check backend
+        working-directory: backend
+        run: |
+          npm ci --legacy-peer-deps
+          npm run typecheck
+          npm run lint
+          npm test -- --runInBand
+          node --test deploy/docker/*.test.cjs
+          npm run build
+          npm run build:batch
+      - name: Check frontend
+        working-directory: frontend
+        run: |
+          npm ci --legacy-peer-deps
+          npm run typecheck
+          npm test
+          npm run contract:check
+          npm run build
+  deploy:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment:
+      name: production
+      url: https://creatorhub.site
+    steps:
+      - name: Deploy verified pair over restricted SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.CREATORHUB_DEPLOY_HOST }}
+          DEPLOY_KEY: ${{ secrets.CREATORHUB_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.CREATORHUB_KNOWN_HOSTS }}
+          BACKEND_SHA: ${{ needs.verify.outputs.backend_sha }}
+          FRONTEND_SHA: ${{ needs.verify.outputs.frontend_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ $DEPLOY_HOST =~ ^[a-zA-Z0-9.-]+$ ]] || { echo 'Missing/invalid deployment host'; exit 1; }
+          [[ $BACKEND_SHA =~ ^[0-9a-f]{40}$ && $FRONTEND_SHA =~ ^[0-9a-f]{40}$ ]]
+          [[ -n $DEPLOY_KEY && -n $KNOWN_HOSTS ]] || { echo 'Configure the production environment SSH secrets'; exit 1; }
+          umask 077
+          key_file=$(mktemp)
+          hosts_file=$(mktemp)
+          trap 'rm -f "$key_file" "$hosts_file"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$key_file"
+          printf '%s\n' "$KNOWN_HOSTS" > "$hosts_file"
+          ssh -T -i "$key_file" \
+            -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts_file" \
+            -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=5 \
+            "creatorhub-deploy@$DEPLOY_HOST" "deploy $BACKEND_SHA $FRONTEND_SHA"
+          printf 'Deployed backend `%s` and frontend `%s`.\n' "$BACKEND_SHA" "$FRONTEND_SHA" >> "$GITHUB_STEP_SUMMARY"
