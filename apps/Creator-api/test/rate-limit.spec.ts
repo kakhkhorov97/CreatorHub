@@ -107,12 +107,14 @@ describe('GraphQL rate limits', () => {
 		await expect(guard.canActivate(context('linkEmail', token))).resolves.toBe(true);
 		// Discovery is a normal query, not part of the ten-attempt security budget.
 		const discovery = context('discoverCreators', token);
-		discovery.getArgs = () => [
-			null,
-			{},
-			{ req: { ip: '127.0.0.1', headers: { authorization: `Bearer ${token}` } } },
-			{ fieldName: 'discoverCreators', operation: { operation: 'query' } },
-		];
+		jest
+			.spyOn(discovery, 'getArgs')
+			.mockReturnValue([
+				null,
+				{},
+				{ req: { ip: '127.0.0.1', headers: { authorization: `Bearer ${token}` } } },
+				{ fieldName: 'discoverCreators', operation: { operation: 'query' } },
+			]);
 		for (let n = 0; n < 40; n++) await expect(guard.canActivate(discovery)).resolves.toBe(true);
 	});
 });

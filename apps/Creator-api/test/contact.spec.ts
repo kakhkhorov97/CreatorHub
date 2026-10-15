@@ -19,7 +19,7 @@ describe('Contact messages', () => {
 		await expect(pipe.transform(input, { type: 'body', metatype: ContactInput })).rejects.toThrow();
 	});
 	it('sends to the fixed team recipient with a safe reply address and plain text', async () => {
-		const mocked = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+		const mocked = jest.spyOn(global, 'fetch').mockResolvedValue(new globalThis.Response(null, { status: 200 }));
 		const mail = new MailService(
 			new ConfigService({ RESEND_API_KEY: 'disposable', RESEND_FROM_EMAIL: 'CreatorHub <noreply@example.com>' }),
 		);
