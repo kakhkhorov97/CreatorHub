@@ -84,7 +84,7 @@ Install only the CreatorHub Nginx site using the HTTP/certificate/HTTPS steps in
 
 ## Short everyday commands
 
-The `creatorhub.sh` helper controls the existing API, worker and frontend containers by their exact Compose project and service labels. It excludes one-off containers and refuses start/stop if any service is missing or has multiple matches. It does not read production environment files, build images, recreate containers, or control Nginx and other projects.
+The `creatorhub.sh` helper controls the existing API, worker and frontend containers by their exact Compose project and service labels. It excludes one-off containers and refuses start/stop if any service is missing or has multiple matches. The status/start/stop/logs commands do not read production environment files. The release shortcuts below read configuration through sudo, build images, and replace only CreatorHub containers. They do not control Nginx or other projects.
 
 After the helper reaches the VPS checkout, install it as a root-owned executable. Installation does not start the website:
 
@@ -140,3 +140,32 @@ Docker is not installed locally, so these images have not been built or run by C
 Local dependency audits and compatibility checks passed; see [the security review](../SECURITY.md). Docker image builds and container runtime checks still need verification. Test live social callbacks, email action links, administrator approvals, cross-tab authentication and Socket.IO. Upload a file, recreate the API container, and verify it still loads. The old systemd backup and monitor scripts must not be used here: they do not manage or observe these containers. A Docker-aware backup/restore procedure and monitoring setup remain required before launch. Stop only API and worker for a consistent database-plus-uploads backup; resume them even if the backup fails. Keep off-server copies, and restore into a disposable database and folder. Configure external HTTPS uptime alerts, inspect Compose health and logs, and test alert delivery and manual rollback.
 
 References: [Docker Ubuntu installation](https://docs.docker.com/engine/install/ubuntu/), [host networking](https://docs.docker.com/engine/network/drivers/host/), [Compose environment files](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/).
+
+
+## Manual release shortcuts
+
+After pushing the updated helper and pulling it on the VPS, reinstall it:
+
+```bash
+sudo install -o root -g root -m 0755 /srv/Sean/creatorhub/backend/deploy/docker/creatorhub.sh /usr/local/bin/creatorhub
+```
+
+Run as `sean`, without prefixing these commands with sudo:
+
+```bash
+creatorhub pull
+creatorhub build
+creatorhub deploy
+```
+
+`pull` checks both clean develop checkouts and their expected GitHub origins, fetches both branches, validates fast-forwards, then merges. It refuses dirty or diverged checkouts rather than overwriting work. An interrupted merge sequence may update only one checkout; rerun pull after reviewing the failure.
+
+`build` creates an immutable timestamp/commit tag, validates Compose, builds the backend then frontend, and records the completed release in `~/.local/state/creatorhub-cli/pending-release`. The worker shares the backend image. It clears the previous candidate before starting a new build so a failed build cannot silently deploy an old candidate. Keep Git-ignored build inputs unchanged while building. Builds consume shared VPS resources but do not replace running containers.
+
+`deploy` reads that saved release even in a new terminal, rejects changed commits, dirty checkouts, changed env/Compose files, or missing images, then starts only api/worker/frontend using `--no-build --pull never --wait`. It waits up to 180 seconds for health, prints status, and checks public HTTPS endpoints. A successful check records `last-deployed`. Production environment contents are never printed.
+
+These shortcuts require Linux flock, sha256sum, the existing sudo-enabled sean account, and a recent Docker Compose with wait support. Run all release shortcuts using the same account. The lock prevents concurrent shortcut commands; do not run manual Docker updates or the separate GitHub deployment simultaneously.
+
+`deploy` can briefly interrupt CreatorHub during container replacement. It reports failure but does not automatically roll back; use status/logs and the existing rollback instructions. It does not migrate databases, clear uploads, prune images, or update the root-installed helper itself. The GitHub CI/CD setup remains separate and can stay inactive. Existing `creatorhub start` only resumes the existing containers and does not deploy pulled code.
+
+Verification: `node --test deploy/docker/creatorhub.test.cjs deploy/docker/creatorhub-release-commands.test.cjs` uses mocks and temporary state, without contacting the VPS. Live installation and a supervised release are still required.
