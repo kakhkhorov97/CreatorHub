@@ -33,8 +33,11 @@ export class CreatorsService {
 		return this.visibility.profile(profile._id);
 	}
 
+	// A profile whose user record was removed directly from the database still resolves, so one
+	// orphaned profile cannot fail a whole list (identity is non-null in the schema).
 	async displayOwner(profile: CreatorProfile) {
-		return requireRecord(await this.users.findById(profile.userId).select('displayName avatarUrl'));
+		const owner = await this.users.findById(profile.userId).select('displayName avatarUrl');
+		return owner ?? { displayName: 'Unknown user' };
 	}
 
 	async create(currentUser: User, input: CreateCreatorInput) {
