@@ -2,7 +2,7 @@
 
 NestJS, GraphQL and MongoDB backend for creator discovery, portfolio projects, services and private project inquiries. A separate batch application delivers public activity notifications.
 
-CreatorHub adapts the Nestar architecture. Features retain separate modules, services and resolvers, with flat Mongoose schemas and separate DTO and enum files. The frontend is a separate repository.
+Features use separate modules, services and resolvers, with flat Mongoose schemas and separate DTO and enum files. The frontend is a separate repository.
 
 ## Run locally
 
@@ -121,3 +121,7 @@ The retained starter dependencies include older peer ranges. Use the install fla
 When Nginx on the same server proxies this application, set the server-only `TRUST_PROXY=loopback`. Leave it unset when clients connect directly. Restrict application ports to local access and have the CreatorHub Nginx location overwrite `X-Forwarded-For` with `$remote_addr`. Do not enable unrestricted proxy trust or accept arbitrary client-supplied forwarding headers. Configure only CreatorHub's proxy locations on a shared server.
 
 Production service, HTTPS proxy, monitoring, backup and paired rollback templates are in [deploy/README.md](deploy/README.md). They are prepared files and still require installation and live verification on the shared VPS. `GET /health` checks database connectivity without returning private details. Production defaults to listening on `127.0.0.1`; local development retains network access unless `LISTEN_HOST` is overridden.
+
+## Project origins
+
+CreatorHub began with instructor-provided Nestar course starter code, which was adapted for the creator discovery and collaboration workflows described in this repository.
