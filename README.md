@@ -122,6 +122,4 @@ When Nginx on the same server proxies this application, set the server-only `TRU
 
 Production service, HTTPS proxy, monitoring, backup and paired rollback templates are in [deploy/README.md](deploy/README.md). They are prepared files and still require installation and live verification on the shared VPS. `GET /health` checks database connectivity without returning private details. Production defaults to listening on `127.0.0.1`; local development retains network access unless `LISTEN_HOST` is overridden.
 
-## Project origins
 
-CreatorHub began with instructor-provided Nestar course starter code, which was adapted for the creator discovery and collaboration workflows described in this repository.
