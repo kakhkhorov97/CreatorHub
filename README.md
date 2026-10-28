@@ -107,7 +107,7 @@ Integration tests use disposable MongoDB replica sets and mock outbound email. M
 
 ## Deployment status
 
-Deployment preparation is in progress. Dependency security upgrades and live production authentication, upload and email workflows still require verification.
+Live at https://creatorhub.site. Releases go through the manual **Deploy CreatorHub** GitHub Actions workflow, which restores the previous images if health checks fail (see `deploy/docker/CICD.md`). Dependency security upgrades and live production authentication, upload and email workflows still require verification.
 
 Set `NODE_ENV=production`, a separate `MONGO_PROD` URI, a strong secret, an HTTPS `FRONTEND_URL`, an HTTPS `UPLOAD_BASE_URL`, persistent `UPLOAD_DIR` and email credentials. Build both applications and run `npm run start:prod` and `NODE_ENV=production npm run start:prod:batch`. Run database setup against the intended production database before serving traffic.
 
